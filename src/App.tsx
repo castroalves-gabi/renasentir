@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import {
-  Archive, ArrowRight, BookOpen, Check, Clock3,
-  Grid2X2, Heart, History, Home, LayoutList, Menu, Plus, Search,
-  Settings, Sun, X,
+  Archive, ArrowRight, BookOpen, Check, Clock3, FolderOpen,
+  Grid2X2, Heart, History, Home, LayoutList, Menu, Pencil, Plus, Search,
+  Settings, Sun, Trash2, X,
 } from 'lucide-react'
 import './App.css'
 
 type ContentType = 'Video' | 'Text' | 'Course' | 'PDF' | 'Image'
 type Status = 'Not started' | 'In progress' | 'Completed' | 'Paused'
+
+type Collection = {
+  id: string
+  name: string
+  description: string
+  cover: string
+  color: string
+}
+
+type CollectionDraft = Omit<Collection, 'id'>
 
 type LibraryItem = {
   id: string
@@ -28,7 +38,10 @@ type LibraryItem = {
   duration?: string
 }
 
-const collections = ['Art & Visual Culture', 'A Study of Cities']
+const initialCollections: Collection[] = [
+  { id: 'art-visual-culture', name: 'Art & Visual Culture', description: 'Works, ideas, and visual references from across art history.', cover: 'https://images.unsplash.com/photo-1578301978018-3005759f48f7?auto=format&fit=crop&w=900&q=85', color: '#59634c' },
+  { id: 'study-of-cities', name: 'A Study of Cities', description: 'Architecture, urban life, and the places that shape us.', cover: 'https://images.unsplash.com/photo-1487958449943-2429e8be8625?auto=format&fit=crop&w=900&q=85', color: '#7c493d' },
+]
 const maxImageSizeBytes = 1_000_000
 const fallbackImage = 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=900&q=85'
 
@@ -55,6 +68,10 @@ function App() {
     const saved = localStorage.getItem('renasentir-library')
     return saved ? JSON.parse(saved) : seedItems
   })
+  const [collections, setCollections] = useState<Collection[]>(() => {
+    const saved = localStorage.getItem('renasentir-collections')
+    return saved ? JSON.parse(saved) : initialCollections
+  })
   const [myDay, setMyDay] = useState<string[]>(() => JSON.parse(localStorage.getItem('renasentir-my-day') || '["1","3","4","6"]'))
   const [modalOpen, setModalOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -62,6 +79,10 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
   const [storageError, setStorageError] = useState('')
+  const [collectionStorageError, setCollectionStorageError] = useState('')
+  const [collectionModalOpen, setCollectionModalOpen] = useState(false)
+  const [editingCollection, setEditingCollection] = useState<Collection | null>(null)
+  const [deletingCollection, setDeletingCollection] = useState<Collection | null>(null)
 
   useEffect(() => {
     try {
@@ -71,7 +92,19 @@ function App() {
       setStorageError('Your library could not be saved. Browser storage may be full; remove large images and try again.')
     }
   }, [items])
+  useEffect(() => {
+    try {
+      localStorage.setItem('renasentir-collections', JSON.stringify(collections))
+    } catch {
+      setCollectionStorageError('Your collections could not be saved. Browser storage may be full.')
+    }
+  }, [collections])
   useEffect(() => localStorage.setItem('renasentir-my-day', JSON.stringify(myDay)), [myDay])
+
+  const openCollectionEditor = (collection: Collection | null = null) => {
+    setEditingCollection(collection)
+    setCollectionModalOpen(true)
+  }
 
   const filtered = items.filter(item =>
     `${item.title} ${item.description} ${item.category} ${item.author}`.toLowerCase().includes(search.toLowerCase())
@@ -95,6 +128,37 @@ function App() {
     }, ...current])
   }
 
+  const saveCollection = (draft: CollectionDraft, collectionId?: string) => {
+    setCollectionStorageError('')
+    const existing = collectionId ? collections.find(collection => collection.id === collectionId) : undefined
+    const savedCollection: Collection = {
+      ...draft,
+      id: existing?.id || crypto.randomUUID(),
+    }
+
+    if (existing) {
+      setCollections(current => current.map(collection => collection.id === existing.id ? savedCollection : collection))
+      if (existing.name !== savedCollection.name) {
+        setItems(current => current.map(item => item.collection === existing.name
+          ? { ...item, collection: savedCollection.name }
+          : item))
+      }
+    } else {
+      setCollections(current => [...current, savedCollection])
+    }
+    return savedCollection
+  }
+
+  const deleteCollection = (collection: Collection) => {
+    setCollectionStorageError('')
+    setCollections(current => current.filter(value => value.id !== collection.id))
+    setItems(current => current.map(item => item.collection === collection.name
+      ? { ...item, collection: null }
+      : item))
+    if (page === collection.name) setPage('Collections')
+    setDeletingCollection(null)
+  }
+
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
@@ -115,9 +179,13 @@ function App() {
           ))}
 
           <div className="nav-divider" />
-          <div className="nav-heading"><p className="nav-label">My collections</p><button aria-label="Create collection"><Plus size={15} /></button></div>
-          <button className="collection-link" onClick={() => setPage('Art & Visual Culture')}><span className="collection-dot olive" />Art & Visual Culture</button>
-          <button className="collection-link" onClick={() => setPage('A Study of Cities')}><span className="collection-dot wine" />A Study of Cities</button>
+          <div className="nav-heading"><button className="nav-label nav-section-button" onClick={() => setPage('Collections')}>My collections</button><button aria-label="Create collection" onClick={() => openCollectionEditor()}><Plus size={15} /></button></div>
+          <button className={`collection-link ${page === 'Collections' ? 'active' : ''}`} onClick={() => setPage('Collections')}><FolderOpen size={15} />All collections</button>
+          {collections.map(collection => (
+            <button key={collection.id} className={`collection-link ${page === collection.name ? 'active' : ''}`} onClick={() => setPage(collection.name)}>
+              <span className="collection-dot" style={{ backgroundColor: collection.color }} />{collection.name}
+            </button>
+          ))}
         </nav>
 
         <button className="sidebar-settings" onClick={() => setPage('Settings')}><Settings size={18} /><span>Settings</span></button>
@@ -133,12 +201,22 @@ function App() {
             <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search your library" aria-label="Search your library" />
             <kbd>⌘ K</kbd>
           </div>
-          <button className="add-button" onClick={() => setModalOpen(true)}><Plus size={17} />Add content</button>
+          {page === 'Collections'
+            ? <button className="add-button" onClick={() => openCollectionEditor()}><Plus size={17} />Add Collection</button>
+            : <button className="add-button" onClick={() => setModalOpen(true)}><Plus size={17} />Add content</button>}
         </header>
-        {storageError && <p className="storage-error" role="alert">{storageError}</p>}
+        {(storageError || collectionStorageError) && <p className="storage-error" role="alert">{storageError || collectionStorageError}</p>}
 
         {page === 'Home' ? (
           <HomePage items={items} myDay={myDay} onNavigate={setPage} onFavorite={toggleFavorite} onAdd={() => setModalOpen(true)} onOpen={setSelectedItem} />
+        ) : page === 'Collections' ? (
+          <CollectionsPage
+            collections={collections}
+            items={items}
+            onOpen={collection => setPage(collection.name)}
+            onEdit={collection => openCollectionEditor(collection)}
+            onDelete={collection => setDeletingCollection(collection)}
+          />
         ) : page === 'My Library' || page === 'Favorites' ? (
           <LibraryPage
             key={page}
@@ -150,16 +228,167 @@ function App() {
             onMyDay={toggleMyDay}
             myDay={myDay}
             onOpen={setSelectedItem}
+            collections={collections}
           />
         ) : page === 'My Day' ? (
           <MyDayPage items={items.filter(item => myDay.includes(item.id))} onOpen={setSelectedItem} />
         ) : (
-          <LibraryPage key={page} title={page} items={collections.includes(page) ? filtered.filter(item => item.collection === page) : filtered} view={view} setView={setView} onFavorite={toggleFavorite} onMyDay={toggleMyDay} myDay={myDay} onOpen={setSelectedItem} />
+          <LibraryPage
+            key={page}
+            title={page}
+            items={collections.some(collection => collection.name === page) ? filtered.filter(item => item.collection === page) : filtered}
+            view={view}
+            setView={setView}
+            onFavorite={toggleFavorite}
+            onMyDay={toggleMyDay}
+            myDay={myDay}
+            onOpen={setSelectedItem}
+            collections={collections}
+            collection={collections.find(value => value.name === page)}
+            onEditCollection={openCollectionEditor}
+            onDeleteCollection={collection => setDeletingCollection(collection)}
+          />
         )}
       </main>
 
-      {modalOpen && <AddContentModal onClose={() => setModalOpen(false)} onAdd={addItem} />}
+      {modalOpen && <AddContentModal onClose={() => setModalOpen(false)} onAdd={addItem} collections={collections} onSaveCollection={saveCollection} />}
+      {collectionModalOpen && (
+        <CollectionEditorModal
+          key={editingCollection?.id || 'new-collection'}
+          initialCollection={editingCollection}
+          collections={collections}
+          onSave={saveCollection}
+          onClose={() => setCollectionModalOpen(false)}
+        />
+      )}
+      {deletingCollection && <DeleteCollectionModal collection={deletingCollection} onCancel={() => setDeletingCollection(null)} onConfirm={() => deleteCollection(deletingCollection)} />}
       {selectedItem && <ContentViewerModal item={selectedItem} onClose={() => setSelectedItem(null)} />}
+    </div>
+  )
+}
+
+function CollectionsPage({ collections, items, onOpen, onEdit, onDelete }: {
+  collections: Collection[]
+  items: LibraryItem[]
+  onOpen: (collection: Collection) => void
+  onEdit: (collection: Collection) => void
+  onDelete: (collection: Collection) => void
+}) {
+  return (
+    <div className="page collections-page">
+      <div className="page-heading">
+        <div><p className="eyebrow">Gathered with intention</p><h1>My Collections</h1></div>
+        <span className="collection-count">{collections.length} collections</span>
+      </div>
+      {collections.length === 0 ? (
+        <div className="empty-state"><BookOpen size={38} /><h2>Your shelves are waiting</h2><p>Create a collection to bring related discoveries together.</p></div>
+      ) : (
+        <div className="collection-grid">
+          {collections.map(collection => {
+            const count = items.filter(item => item.collection === collection.name).length
+            return (
+              <article className="collection-card" key={collection.id}>
+                <button className="content-open-overlay" onClick={() => onOpen(collection)} aria-label={`Open ${collection.name}`} />
+                <div className="collection-card-cover" style={{ backgroundColor: collection.color }}>
+                  {collection.cover ? <img src={collection.cover} alt="" /> : <BookOpen size={34} strokeWidth={1.2} />}
+                  <span>{count} {count === 1 ? 'item' : 'items'}</span>
+                </div>
+                <div className="collection-card-copy">
+                  <h2>{collection.name}</h2>
+                  <p>{collection.description || 'A personal gathering of related content.'}</p>
+                </div>
+                <div className="collection-card-actions">
+                  <button className="square-button" onClick={() => onEdit(collection)} aria-label={`Edit ${collection.name}`}><Pencil size={15} /></button>
+                  <button className="square-button" onClick={() => onDelete(collection)} aria-label={`Delete ${collection.name}`}><Trash2 size={15} /></button>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CollectionEditorModal({ initialCollection, collections, onSave, onClose, onSaved }: {
+  initialCollection: Collection | null
+  collections: Collection[]
+  onSave: (draft: CollectionDraft, collectionId?: string) => Collection
+  onClose: () => void
+  onSaved?: (collection: Collection) => void
+}) {
+  const [name, setName] = useState(initialCollection?.name || '')
+  const [description, setDescription] = useState(initialCollection?.description || '')
+  const [cover, setCover] = useState(initialCollection?.cover || '')
+  const [color, setColor] = useState(initialCollection?.color || '#59634c')
+  const [error, setError] = useState('')
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      setError('Enter a collection name.')
+      return
+    }
+
+    const duplicate = collections.some(collection =>
+      collection.id !== initialCollection?.id && collection.name.trim().toLocaleLowerCase() === trimmedName.toLocaleLowerCase()
+    )
+    if (duplicate) {
+      setError('A collection with this name already exists.')
+      return
+    }
+
+    const safeCover = getSafeUrl(cover.trim())
+    if (cover.trim() && !safeCover) {
+      setError('Enter a valid HTTP or HTTPS cover image URL.')
+      return
+    }
+
+    const saved = onSave({
+      name: trimmedName,
+      description: description.trim(),
+      cover: safeCover?.href || '',
+      color,
+    }, initialCollection?.id)
+    onSaved?.(saved)
+    onClose()
+  }
+
+  return (
+    <div className="modal-backdrop collection-editor-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="modal collection-editor-modal" role="dialog" aria-modal="true" aria-labelledby="collection-editor-title">
+        <div className="modal-header">
+          <div><p className="eyebrow">Make room for a new thread</p><h2 id="collection-editor-title">{initialCollection ? 'Edit collection' : 'Create a collection'}</h2></div>
+          <button className="icon-button" onClick={onClose} aria-label="Close collection editor"><X size={18} /></button>
+        </div>
+        <form onSubmit={submit}>
+          <label>Collection name<input autoFocus value={name} onChange={event => setName(event.target.value)} placeholder="e.g. Renaissance gardens" maxLength={60} required /></label>
+          <label>Description<textarea value={description} onChange={event => setDescription(event.target.value)} placeholder="What brings these materials together?" rows={3} /></label>
+          <label>Cover image URL<input type="url" value={cover} onChange={event => setCover(event.target.value)} placeholder="https://..." /></label>
+          <label>Accent color<select value={color} onChange={event => setColor(event.target.value)}>
+            <option value="#59634c">Olive</option><option value="#7c493d">Wine</option><option value="#9b7546">Aged gold</option><option value="#5d7180">Slate blue</option>
+          </select></label>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Plus size={16} />{initialCollection ? 'Save changes' : 'Create collection'}</button></div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
+function DeleteCollectionModal({ collection, onCancel, onConfirm }: {
+  collection: Collection
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="modal-backdrop collection-editor-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onCancel() }}>
+      <section className="modal delete-collection-modal" role="dialog" aria-modal="true" aria-labelledby="delete-collection-title">
+        <div className="modal-header"><div><p className="eyebrow">Collection settings</p><h2 id="delete-collection-title">Delete collection?</h2></div><button className="icon-button" onClick={onCancel} aria-label="Close delete confirmation"><X size={18} /></button></div>
+        <div className="delete-collection-copy"><p><strong>{collection.name}</strong> will be removed. Its contents will stay in My Library and become uncollected.</p></div>
+        <div className="modal-actions"><button className="secondary-button" onClick={onCancel}>Cancel</button><button className="danger-button" onClick={onConfirm}><Trash2 size={15} />Delete collection</button></div>
+      </section>
     </div>
   )
 }
@@ -246,7 +475,7 @@ function HomePage({ items, myDay, onNavigate, onFavorite, onAdd, onOpen }: {
   )
 }
 
-function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, onOpen }: {
+function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, onOpen, collections, collection, onEditCollection, onDeleteCollection }: {
   title: string
   items: LibraryItem[]
   view: 'grid' | 'list'
@@ -255,6 +484,10 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
   onMyDay: (id: string) => void
   myDay: string[]
   onOpen: (item: LibraryItem) => void
+  collections: Collection[]
+  collection?: Collection
+  onEditCollection?: (collection: Collection) => void
+  onDeleteCollection?: (collection: Collection) => void
 }) {
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -274,10 +507,14 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
   return (
     <div className="page library-page">
       <div className="page-heading">
-        <div><p className="eyebrow">{title === 'My Library' ? 'Personal collection' : 'Curated view'}</p><h1>{title}</h1></div>
-        <div className="view-toggle">
-          <button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="Grid view"><Grid2X2 size={17} /></button>
-          <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="List view"><LayoutList size={18} /></button>
+        <div><p className="eyebrow">{collection?.description || (title === 'My Library' ? 'Personal collection' : 'Curated view')}</p><h1>{title}</h1></div>
+        <div className="page-heading-actions">
+          {collection && onEditCollection && <button className="secondary-button collection-edit-button" onClick={() => onEditCollection(collection)}><Pencil size={15} />Edit collection</button>}
+          {collection && onDeleteCollection && <button className="square-button collection-delete-button" onClick={() => onDeleteCollection(collection)} aria-label={`Delete ${collection.name}`}><Trash2 size={16} /></button>}
+          <div className="view-toggle">
+            <button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="Grid view"><Grid2X2 size={17} /></button>
+            <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="List view"><LayoutList size={18} /></button>
+          </div>
         </div>
       </div>
       <div className="filterbar">
@@ -292,7 +529,7 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
         <select aria-label="Filter by collection" value={collectionFilter} onChange={event => setCollectionFilter(event.target.value)}>
           <option value="all">All collections</option>
           <option value="none">Without collection</option>
-          {collections.map(collection => <option key={collection}>{collection}</option>)}
+          {collections.map(value => <option key={value.id}>{value.name}</option>)}
         </select>
         <select aria-label="Sort library items" value={sortOrder} onChange={event => setSortOrder(event.target.value)}>
           <option value="newest">Recently added</option>
@@ -501,7 +738,12 @@ function ContentViewerModal({ item, onClose }: { item: LibraryItem; onClose: () 
   )
 }
 
-function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item: Omit<LibraryItem, 'id' | 'createdAt' | 'status' | 'favorite'>) => void }) {
+function AddContentModal({ onClose, onAdd, collections, onSaveCollection }: {
+  onClose: () => void
+  onAdd: (item: Omit<LibraryItem, 'id' | 'createdAt' | 'status' | 'favorite'>) => void
+  collections: Collection[]
+  onSaveCollection: (draft: CollectionDraft, collectionId?: string) => Collection
+}) {
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
   const [type, setType] = useState<ContentType>('Text')
@@ -513,6 +755,7 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item
   const [imageError, setImageError] = useState('')
   const [metadataNotice, setMetadataNotice] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [collectionEditorOpen, setCollectionEditorOpen] = useState(false)
 
   const loadImageFile = (event: ChangeEvent<HTMLInputElement>, onLoad: (dataUrl: string) => void) => {
     const file = event.currentTarget.files?.[0]
@@ -615,7 +858,13 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item
         <form onSubmit={submit}>
           <label>Paste a link or enter a title<input value={url} onChange={event => { setUrl(event.target.value); setMetadataNotice('') }} placeholder="https://..." /></label>
           <label>Title<input value={title} onChange={event => setTitle(event.target.value)} placeholder="What did you discover?" required /></label>
-          <div className="form-row"><label>Type<select value={type} onChange={event => setType(event.target.value as ContentType)}><option>Text</option><option>Video</option><option>Course</option><option>PDF</option><option>Image</option></select></label><label>Collection<select value={collection} onChange={event => setCollection(event.target.value)}><option value="">Choose later</option>{collections.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
+          <div className="form-row"><label>Type<select value={type} onChange={event => setType(event.target.value as ContentType)}><option>Text</option><option>Video</option><option>Course</option><option>PDF</option><option>Image</option></select></label><label>Collection<select value={collection} onChange={event => {
+            if (event.target.value === '__create_collection__') {
+              setCollectionEditorOpen(true)
+              return
+            }
+            setCollection(event.target.value)
+          }}><option value="">Choose later</option>{collections.map(value => <option key={value.id} value={value.name}>{value.name}</option>)}<option value="__create_collection__">Create new...</option></select></label></div>
           {type === 'Image' && <label>Image to save<input key={imageData ? 'image-selected' : 'image-empty'} type="file" accept="image/jpeg,image/png,image/webp,image/gif" required={!imageData} onChange={event => loadImageFile(event, setImageData)} /></label>}
           <label>Card preview<select value={previewMode} onChange={event => setPreviewMode(event.target.value as 'automatic' | 'custom')}><option value="automatic">Automatic preview</option><option value="custom">Use a custom image</option></select></label>
           {previewMode === 'custom' && <div className="custom-preview-fields">
@@ -629,6 +878,7 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={isSaving}><Plus size={16} />{isSaving ? 'Saving…' : 'Save to library'}</button></div>
         </form>
       </section>
+      {collectionEditorOpen && <CollectionEditorModal initialCollection={null} collections={collections} onSave={onSaveCollection} onClose={() => setCollectionEditorOpen(false)} onSaved={created => setCollection(created.name)} />}
     </div>
   )
 }
