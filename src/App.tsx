@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
-  Archive, ArrowRight, BookOpen, Check, ChevronDown, Clock3,
-  Grid2X2, Heart, History, Home, Inbox, LayoutList, Menu, Plus, Search,
+  Archive, ArrowRight, BookOpen, Check, Clock3,
+  Grid2X2, Heart, History, Home, LayoutList, Menu, Plus, Search,
   Settings, Sun, X,
 } from 'lucide-react'
 import './App.css'
@@ -21,8 +21,12 @@ type LibraryItem = {
   favorite: boolean
   image: string
   createdAt: string
+  collection?: string | null
+  originalUrl?: string
   duration?: string
 }
+
+const collections = ['Art & Visual Culture', 'A Study of Cities']
 
 const seedItems: LibraryItem[] = [
   { id: '1', title: 'The Golden Ratio in Renaissance Art', description: 'A visual essay tracing proportion, harmony and the search for beauty.', type: 'Video', category: 'Art & Design', author: 'Museum of Thought', status: 'In progress', favorite: true, image: 'https://images.unsplash.com/photo-1547891654-e66ed7ebb968?auto=format&fit=crop&w=900&q=85', createdAt: '2026-11-24', duration: '18 min' },
@@ -36,7 +40,6 @@ const seedItems: LibraryItem[] = [
 const navItems = [
   { label: 'Home', icon: Home },
   { label: 'My Library', icon: Archive },
-  { label: 'Inbox', icon: Inbox, count: 3 },
   { label: 'My Day', icon: Sun, count: 4 },
   { label: 'History', icon: History },
   { label: 'Favorites', icon: Heart },
@@ -122,8 +125,9 @@ function App() {
 
         {page === 'Home' ? (
                   <HomePage items={items} myDay={myDay} onNavigate={setPage} onFavorite={toggleFavorite} onAdd={() => setModalOpen(true)} />
-        ) : page === 'My Library' || page === 'Favorites' || page === 'Inbox' ? (
+        ) : page === 'My Library' || page === 'Favorites' ? (
           <LibraryPage
+            key={page}
             title={page === 'My Library' ? 'My Library' : page}
             items={page === 'Favorites' ? filtered.filter(item => item.favorite) : filtered}
             view={view}
@@ -135,7 +139,7 @@ function App() {
         ) : page === 'My Day' ? (
           <MyDayPage items={items.filter(item => myDay.includes(item.id))} onToggle={toggleMyDay} />
         ) : (
-          <LibraryPage title={page} items={filtered} view={view} setView={setView} onFavorite={toggleFavorite} onMyDay={toggleMyDay} myDay={myDay} />
+          <LibraryPage key={page} title={page} items={collections.includes(page) ? filtered.filter(item => item.collection === page) : filtered} view={view} setView={setView} onFavorite={toggleFavorite} onMyDay={toggleMyDay} myDay={myDay} />
         )}
       </main>
 
@@ -231,6 +235,21 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay }
   onMyDay: (id: string) => void
   myDay: string[]
 }) {
+  const [typeFilter, setTypeFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [collectionFilter, setCollectionFilter] = useState('all')
+  const [sortOrder, setSortOrder] = useState('newest')
+  const visibleItems = items
+    .filter(item => !typeFilter || item.type === typeFilter)
+    .filter(item => !statusFilter || item.status === statusFilter)
+    .filter(item => collectionFilter === 'all'
+      || (collectionFilter === 'none' ? !item.collection : item.collection === collectionFilter))
+    .sort((a, b) => {
+      if (sortOrder === 'oldest') return a.createdAt.localeCompare(b.createdAt)
+      if (sortOrder === 'title') return a.title.localeCompare(b.title)
+      return b.createdAt.localeCompare(a.createdAt)
+    })
+
   return (
     <div className="page library-page">
       <div className="page-heading">
@@ -241,16 +260,31 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay }
         </div>
       </div>
       <div className="filterbar">
-        <button>All types <ChevronDown size={14} /></button>
-        <button>All statuses <ChevronDown size={14} /></button>
-        <button>Recently added <ChevronDown size={14} /></button>
-        <span>{items.length} items</span>
+        <select aria-label="Filter by type" value={typeFilter} onChange={event => setTypeFilter(event.target.value)}>
+          <option value="">All types</option>
+          <option>Video</option><option>Text</option><option>Course</option><option>PDF</option><option>Image</option>
+        </select>
+        <select aria-label="Filter by status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+          <option value="">All statuses</option>
+          <option>Not started</option><option>In progress</option><option>Completed</option><option>Paused</option>
+        </select>
+        <select aria-label="Filter by collection" value={collectionFilter} onChange={event => setCollectionFilter(event.target.value)}>
+          <option value="all">All collections</option>
+          <option value="none">Without collection</option>
+          {collections.map(collection => <option key={collection}>{collection}</option>)}
+        </select>
+        <select aria-label="Sort library items" value={sortOrder} onChange={event => setSortOrder(event.target.value)}>
+          <option value="newest">Recently added</option>
+          <option value="oldest">Oldest first</option>
+          <option value="title">Title</option>
+        </select>
+        <span>{visibleItems.length} items</span>
       </div>
-      {items.length === 0 ? (
+      {visibleItems.length === 0 ? (
         <div className="empty-state"><BookOpen size={38} /><h2>No discoveries yet</h2><p>Add something that sparks your curiosity.</p></div>
       ) : view === 'grid' ? (
         <div className="library-grid">
-          {items.map(item => (
+          {visibleItems.map(item => (
             <article className="content-card" key={item.id}>
               <div className="card-image"><img src={item.image} alt={item.title} /><span className="type-pill">{item.type}</span><button className={`card-heart ${item.favorite ? 'active' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button></div>
               <div className="card-copy"><p>{item.category}</p><h3>{item.title}</h3><div className="card-meta"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}<button onClick={() => onMyDay(item.id)} aria-label="Add to My Day" className={myDay.includes(item.id) ? 'in-day' : ''}><Plus size={14} /></button></div></div>
@@ -259,7 +293,7 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay }
         </div>
       ) : (
         <div className="content-feed">
-          {items.map(item => (
+          {visibleItems.map(item => (
             <article className="feed-row" key={item.id}>
               <img src={item.image} alt="" />
               <div className="feed-copy"><p>{item.category} · {item.type}</p><h3>{item.title}</h3><span>{item.description}</span></div>
@@ -301,12 +335,24 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
   const [type, setType] = useState<ContentType>('Text')
+  const [collection, setCollection] = useState('')
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (!title.trim()) return
-    onAdd({ title: title.trim(), description: 'A new discovery added to your personal library.', type, category: 'Unsorted', author: 'Personal archive', image: 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=900&q=85' })
+    onAdd({
+      title: title.trim(),
+      description: 'A new discovery added to your personal library.',
+      type,
+      category: 'Unsorted',
+      author: 'Personal archive',
+      image: 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=900&q=85',
+      collection: collection || null,
+      originalUrl: url.trim() || undefined,
+    })
     setTitle('')
+    setUrl('')
+    setCollection('')
   }
 
   return (
@@ -316,7 +362,7 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item
         <form onSubmit={submit}>
           <label>Paste a link or enter a title<input value={url} onChange={event => setUrl(event.target.value)} placeholder="https://..." /></label>
           <label>Title<input value={title} onChange={event => setTitle(event.target.value)} placeholder="What did you discover?" required /></label>
-          <div className="form-row"><label>Type<select value={type} onChange={event => setType(event.target.value as ContentType)}><option>Text</option><option>Video</option><option>Course</option><option>PDF</option><option>Image</option></select></label><label>Collection<select><option>Inbox</option><option>Art & Visual Culture</option><option>A Study of Cities</option></select></label></div>
+          <div className="form-row"><label>Type<select value={type} onChange={event => setType(event.target.value as ContentType)}><option>Text</option><option>Video</option><option>Course</option><option>PDF</option><option>Image</option></select></label><label>Collection<select value={collection} onChange={event => setCollection(event.target.value)}><option value="">Escolher depois</option>{collections.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Plus size={16} />Save to library</button></div>
         </form>
       </section>
