@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import {
   Archive, ArrowRight, BookOpen, Check, Clock3,
   Grid2X2, Heart, History, Home, LayoutList, Menu, Plus, Search,
@@ -23,10 +23,14 @@ type LibraryItem = {
   createdAt: string
   collection?: string | null
   originalUrl?: string
+  mediaDataUrl?: string
+  channelName?: string
   duration?: string
 }
 
 const collections = ['Art & Visual Culture', 'A Study of Cities']
+const maxImageSizeBytes = 1_000_000
+const fallbackImage = 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=900&q=85'
 
 const seedItems: LibraryItem[] = [
   { id: '1', title: 'The Golden Ratio in Renaissance Art', description: 'A visual essay tracing proportion, harmony and the search for beauty.', type: 'Video', category: 'Art & Design', author: 'Museum of Thought', status: 'In progress', favorite: true, image: 'https://images.unsplash.com/photo-1547891654-e66ed7ebb968?auto=format&fit=crop&w=900&q=85', createdAt: '2026-11-24', duration: '18 min' },
@@ -57,8 +61,16 @@ function App() {
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
+  const [storageError, setStorageError] = useState('')
 
-  useEffect(() => localStorage.setItem('renasentir-library', JSON.stringify(items)), [items])
+  useEffect(() => {
+    try {
+      localStorage.setItem('renasentir-library', JSON.stringify(items))
+      setStorageError('')
+    } catch {
+      setStorageError('Your library could not be saved. Browser storage may be full; remove large images and try again.')
+    }
+  }, [items])
   useEffect(() => localStorage.setItem('renasentir-my-day', JSON.stringify(myDay)), [myDay])
 
   const filtered = items.filter(item =>
@@ -123,6 +135,7 @@ function App() {
           </div>
           <button className="add-button" onClick={() => setModalOpen(true)}><Plus size={17} />Add content</button>
         </header>
+        {storageError && <p className="storage-error" role="alert">{storageError}</p>}
 
         {page === 'Home' ? (
           <HomePage items={items} myDay={myDay} onNavigate={setPage} onFavorite={toggleFavorite} onAdd={() => setModalOpen(true)} onOpen={setSelectedItem} />
@@ -206,6 +219,7 @@ function HomePage({ items, myDay, onNavigate, onFavorite, onAdd, onOpen }: {
                 <div className="recent-image"><img src={item.image} alt="" /><span>{item.type}</span></div>
                 <h3>{item.title}</h3>
                 <p>{item.category}</p>
+                <ContentTags item={item} />
               </article>
             ))}
           </div>
@@ -222,7 +236,7 @@ function HomePage({ items, myDay, onNavigate, onFavorite, onAdd, onOpen }: {
             <article className={`mosaic-card mosaic-${index + 1}`} key={item.id}>
               <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
               <img src={item.image} alt={item.title} />
-              <div className="mosaic-overlay"><span>{item.category}</span><h3>{item.title}</h3></div>
+              <div className="mosaic-overlay"><span className="mosaic-category">{item.category}</span><h3>{item.title}</h3><ContentTags item={item} /></div>
               <button className={`card-heart ${item.favorite ? 'active' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button>
             </article>
           ))}
@@ -295,7 +309,7 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
             <article className="content-card" key={item.id}>
               <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
               <div className="card-image"><img src={item.image} alt={item.title} /><span className="type-pill">{item.type}</span><button className={`card-heart ${item.favorite ? 'active' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button></div>
-              <div className="card-copy"><p>{item.category}</p><h3>{item.title}</h3><div className="card-meta"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}<button onClick={() => onMyDay(item.id)} aria-label="Add to My Day" className={myDay.includes(item.id) ? 'in-day' : ''}><Plus size={14} /></button></div></div>
+              <div className="card-copy"><p>{item.category}</p><h3>{item.title}</h3><div className="card-meta"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}<button onClick={() => onMyDay(item.id)} aria-label="Add to My Day" className={myDay.includes(item.id) ? 'in-day' : ''}><Plus size={14} /></button></div><ContentTags item={item} /></div>
             </article>
           ))}
         </div>
@@ -305,7 +319,7 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
             <article className="feed-row" key={item.id}>
               <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
               <img src={item.image} alt="" />
-              <div className="feed-copy"><p>{item.category} · {item.type}</p><h3>{item.title}</h3><span>{item.description}</span></div>
+              <div className="feed-copy"><p>{item.category} · {item.type}</p><h3>{item.title}</h3><span>{item.description}</span><ContentTags item={item} /></div>
               <div className="feed-status"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}</div>
               <button className={`square-button ${myDay.includes(item.id) ? 'in-day' : ''}`} onClick={() => onMyDay(item.id)} aria-label="Add to My Day"><Plus size={16} /></button>
               <button className={`square-button ${item.favorite ? 'favorite' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button>
@@ -331,7 +345,7 @@ function MyDayPage({ items, onOpen }: { items: LibraryItem[]; onOpen: (item: Lib
             <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
             <button className="day-checkbox" onClick={() => setCompleted(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id])} aria-label="Mark complete">{completed.includes(item.id) && <Check size={15} />}</button>
             <img src={item.image} alt="" />
-            <div className="day-item-copy"><p>{item.category}</p><h3>{item.title}</h3></div>
+            <div className="day-item-copy"><p>{item.category}</p><h3>{item.title}</h3><ContentTags item={item} /></div>
             <span className="day-duration">{item.duration || 'Flexible'}</span>
             <button className="drag-handle" aria-label="Reorder">⠿</button>
           </article>
@@ -351,7 +365,7 @@ function getSafeUrl(value?: string) {
   }
 }
 
-function getYouTubeEmbedUrl(value?: string) {
+function getYouTubeVideoId(value?: string) {
   const url = getSafeUrl(value)
   if (!url) return null
 
@@ -362,7 +376,81 @@ function getYouTubeEmbedUrl(value?: string) {
     videoId = url.searchParams.get('v') || url.pathname.match(/^\/(?:embed|shorts)\/([^/]+)/)?.[1] || ''
   }
 
-  return /^[\w-]{11}$/.test(videoId) ? `https://www.youtube-nocookie.com/embed/${videoId}` : null
+  return /^[\w-]{11}$/.test(videoId) ? videoId : null
+}
+
+function getYouTubeEmbedUrl(value?: string) {
+  const videoId = getYouTubeVideoId(value)
+  return videoId ? `https://www.youtube-nocookie.com/embed/${videoId}` : null
+}
+
+function getYouTubeThumbnailUrl(value?: string) {
+  const videoId = getYouTubeVideoId(value)
+  return videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null
+}
+
+async function fetchYouTubeChannelName(value: string) {
+  const videoId = getYouTubeVideoId(value)
+  if (!videoId) return null
+
+  const endpoint = new URL('https://www.youtube.com/oembed')
+  endpoint.searchParams.set('url', `https://www.youtube.com/watch?v=${videoId}`)
+  endpoint.searchParams.set('format', 'json')
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(8000) })
+  if (!response.ok) throw new Error(`YouTube metadata request failed (${response.status}).`)
+
+  const metadata: unknown = await response.json()
+  if (typeof metadata !== 'object' || metadata === null || !('author_name' in metadata)) return null
+  return typeof metadata.author_name === 'string' && metadata.author_name.trim()
+    ? metadata.author_name.trim()
+    : null
+}
+
+function getVideoChannelName(item: LibraryItem) {
+  if (item.type !== 'Video') return null
+  const channelName = item.channelName || (item.author !== 'Personal archive' ? item.author : null)
+  if (!channelName) return null
+  const characters = Array.from(channelName)
+  if (characters.length <= 40) return channelName
+
+  const cutoff = characters.slice(0, 39).join('')
+  const wordBoundary = cutoff.lastIndexOf(' ')
+  const shortened = wordBoundary > 0 ? cutoff.slice(0, wordBoundary) : cutoff
+  return `${shortened.trimEnd()}…`
+}
+
+function ContentTags({ item }: { item: LibraryItem }) {
+  const channelName = getVideoChannelName(item)
+  const collection = item.collection?.trim()
+  if (!channelName && !collection) return null
+
+  return (
+    <div className="content-tags">
+      {collection && <span className="content-tag">{collection}</span>}
+      {collection && channelName && <span className="tag-separator" aria-hidden="true" />}
+      {channelName && <span className="content-tag">{channelName}</span>}
+    </div>
+  )
+}
+
+function readImageAsDataUrl(file: File) {
+  const supportedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+  if (!supportedTypes.includes(file.type)) {
+    return Promise.reject(new Error('Choose a JPG, PNG, WEBP, or GIF image.'))
+  }
+  if (file.size > maxImageSizeBytes) {
+    return Promise.reject(new Error('Images must be 1 MB or smaller for browser storage.'))
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('The image could not be read.'))
+    }
+    reader.onerror = () => reject(new Error('The image could not be read.'))
+    reader.readAsDataURL(file)
+  })
 }
 
 function ContentViewerModal({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
@@ -392,7 +480,7 @@ function ContentViewerModal({ item, onClose }: { item: LibraryItem; onClose: () 
             ) : isPdf && sourceUrl ? (
               <iframe src={sourceUrl.href} title={item.title} />
             ) : item.type === 'Image' ? (
-              <img src={sourceUrl?.href || item.image} alt={item.title} />
+              <img src={item.mediaDataUrl || item.image} alt={item.title} />
             ) : (
               <div className="viewer-placeholder">
                 <img src={item.image} alt="" />
@@ -418,34 +506,127 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item
   const [url, setUrl] = useState('')
   const [type, setType] = useState<ContentType>('Text')
   const [collection, setCollection] = useState('')
+  const [previewMode, setPreviewMode] = useState<'automatic' | 'custom'>('automatic')
+  const [customCoverUrl, setCustomCoverUrl] = useState('')
+  const [customCoverData, setCustomCoverData] = useState('')
+  const [imageData, setImageData] = useState('')
+  const [imageError, setImageError] = useState('')
+  const [metadataNotice, setMetadataNotice] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const loadImageFile = (event: ChangeEvent<HTMLInputElement>, onLoad: (dataUrl: string) => void) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+
+    setImageError('')
+    void readImageAsDataUrl(file)
+      .then(onLoad)
+      .catch(error => setImageError(error instanceof Error ? error.message : 'The image could not be read.'))
+  }
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (!title.trim()) return
+    void saveContent()
+  }
+
+  const saveContent = async () => {
+    setImageError('')
+    const originalUrl = getSafeUrl(url.trim())
+    const customUrl = getSafeUrl(customCoverUrl.trim())
+
+    if (!title.trim()) {
+      setImageError('Enter a title for this content.')
+      return
+    }
+    if (url.trim() && !originalUrl) {
+      setImageError('Enter a valid HTTP or HTTPS content link.')
+      return
+    }
+    if (type === 'Image' && !imageData) {
+      setImageError('Upload the image you want to save to your library.')
+      return
+    }
+    if (previewMode === 'custom' && !customCoverData && !customUrl) {
+      setImageError('Upload a custom preview image or paste a direct image URL.')
+      return
+    }
+
+    setIsSaving(true)
+    setMetadataNotice('')
+    let channelName: string | undefined
+    let notice = ''
+    if (type === 'Video' && originalUrl) {
+      if (getYouTubeVideoId(originalUrl.href)) {
+        try {
+          channelName = await fetchYouTubeChannelName(originalUrl.href) || undefined
+          if (!channelName) notice = 'The YouTube channel name was unavailable; the video was saved without a channel tag.'
+        } catch {
+          notice = 'Could not retrieve the YouTube channel name; the video was saved without a channel tag.'
+        }
+      } else {
+        notice = 'Channel tags are retrieved automatically for YouTube videos only.'
+      }
+    }
+
+    const automaticPreview = type === 'Image'
+      ? imageData
+      : type === 'Video'
+        ? getYouTubeThumbnailUrl(originalUrl?.href) || fallbackImage
+        : fallbackImage
+    const customPreview = customCoverData || customUrl?.href
+
     onAdd({
       title: title.trim(),
       description: 'A new discovery added to your personal library.',
       type,
       category: 'Unsorted',
-      author: 'Personal archive',
-      image: 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=900&q=85',
+      author: channelName || 'Personal archive',
+      channelName,
+      image: previewMode === 'custom' ? customPreview || automaticPreview : automaticPreview,
       collection: collection || null,
-      originalUrl: url.trim() || undefined,
+      originalUrl: originalUrl?.href,
+      mediaDataUrl: type === 'Image' && previewMode === 'custom' ? imageData : undefined,
     })
+    setMetadataNotice(notice)
     setTitle('')
     setUrl('')
     setCollection('')
+    setType('Text')
+    setPreviewMode('automatic')
+    setCustomCoverUrl('')
+    setCustomCoverData('')
+    setImageData('')
+    setIsSaving(false)
   }
+
+  const automaticPreview = type === 'Image'
+    ? imageData || fallbackImage
+    : type === 'Video'
+      ? getYouTubeThumbnailUrl(url) || fallbackImage
+      : fallbackImage
+  const customPreview = customCoverData || getSafeUrl(customCoverUrl)?.href || automaticPreview
+  const currentPreview = previewMode === 'custom' ? customPreview : automaticPreview
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="add-title">
         <div className="modal-header"><div><p className="eyebrow">Expand the collection</p><h2 id="add-title">Add content</h2></div><button className="icon-button" onClick={onClose} aria-label="Close"><X size={18} /></button></div>
         <form onSubmit={submit}>
-          <label>Paste a link or enter a title<input value={url} onChange={event => setUrl(event.target.value)} placeholder="https://..." /></label>
+          <label>Paste a link or enter a title<input value={url} onChange={event => { setUrl(event.target.value); setMetadataNotice('') }} placeholder="https://..." /></label>
           <label>Title<input value={title} onChange={event => setTitle(event.target.value)} placeholder="What did you discover?" required /></label>
           <div className="form-row"><label>Type<select value={type} onChange={event => setType(event.target.value as ContentType)}><option>Text</option><option>Video</option><option>Course</option><option>PDF</option><option>Image</option></select></label><label>Collection<select value={collection} onChange={event => setCollection(event.target.value)}><option value="">Choose later</option>{collections.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
-          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Plus size={16} />Save to library</button></div>
+          {type === 'Image' && <label>Image to save<input key={imageData ? 'image-selected' : 'image-empty'} type="file" accept="image/jpeg,image/png,image/webp,image/gif" required={!imageData} onChange={event => loadImageFile(event, setImageData)} /></label>}
+          <label>Card preview<select value={previewMode} onChange={event => setPreviewMode(event.target.value as 'automatic' | 'custom')}><option value="automatic">Automatic preview</option><option value="custom">Use a custom image</option></select></label>
+          {previewMode === 'custom' && <div className="custom-preview-fields">
+            <label>Custom image URL<input type="url" value={customCoverUrl} onChange={event => setCustomCoverUrl(event.target.value)} placeholder="https://.../image.jpg" /></label>
+            <label>Or upload a custom image<input key={customCoverData ? 'cover-selected' : 'cover-empty'} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event => loadImageFile(event, setCustomCoverData)} /></label>
+          </div>}
+          <div className="cover-preview"><img src={currentPreview} alt="Selected card preview" /><span>Card preview</span></div>
+          {imageError && <p className="form-error" role="alert">{imageError}</p>}
+          {isSaving && <p className="form-notice" role="status">Retrieving YouTube channel details…</p>}
+          {metadataNotice && <p className="form-notice" role="status">{metadataNotice}</p>}
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={isSaving}><Plus size={16} />{isSaving ? 'Saving…' : 'Save to library'}</button></div>
         </form>
       </section>
     </div>
