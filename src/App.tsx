@@ -362,7 +362,7 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (item
         <form onSubmit={submit}>
           <label>Paste a link or enter a title<input value={url} onChange={event => setUrl(event.target.value)} placeholder="https://..." /></label>
           <label>Title<input value={title} onChange={event => setTitle(event.target.value)} placeholder="What did you discover?" required /></label>
-          <div className="form-row"><label>Type<select value={type} onChange={event => setType(event.target.value as ContentType)}><option>Text</option><option>Video</option><option>Course</option><option>PDF</option><option>Image</option></select></label><label>Collection<select value={collection} onChange={event => setCollection(event.target.value)}><option value="">Escolher depois</option>{collections.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
+          <div className="form-row"><label>Type<select value={type} onChange={event => setType(event.target.value as ContentType)}><option>Text</option><option>Video</option><option>Course</option><option>PDF</option><option>Image</option></select></label><label>Collection<select value={collection} onChange={event => setCollection(event.target.value)}><option value="">Choose later</option>{collections.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Plus size={16} />Save to library</button></div>
         </form>
       </section>
