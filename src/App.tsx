@@ -56,6 +56,7 @@ function App() {
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
 
   useEffect(() => localStorage.setItem('renasentir-library', JSON.stringify(items)), [items])
   useEffect(() => localStorage.setItem('renasentir-my-day', JSON.stringify(myDay)), [myDay])
@@ -124,7 +125,7 @@ function App() {
         </header>
 
         {page === 'Home' ? (
-                  <HomePage items={items} myDay={myDay} onNavigate={setPage} onFavorite={toggleFavorite} onAdd={() => setModalOpen(true)} />
+          <HomePage items={items} myDay={myDay} onNavigate={setPage} onFavorite={toggleFavorite} onAdd={() => setModalOpen(true)} onOpen={setSelectedItem} />
         ) : page === 'My Library' || page === 'Favorites' ? (
           <LibraryPage
             key={page}
@@ -135,25 +136,28 @@ function App() {
             onFavorite={toggleFavorite}
             onMyDay={toggleMyDay}
             myDay={myDay}
+            onOpen={setSelectedItem}
           />
         ) : page === 'My Day' ? (
-          <MyDayPage items={items.filter(item => myDay.includes(item.id))} onToggle={toggleMyDay} />
+          <MyDayPage items={items.filter(item => myDay.includes(item.id))} onOpen={setSelectedItem} />
         ) : (
-          <LibraryPage key={page} title={page} items={collections.includes(page) ? filtered.filter(item => item.collection === page) : filtered} view={view} setView={setView} onFavorite={toggleFavorite} onMyDay={toggleMyDay} myDay={myDay} />
+          <LibraryPage key={page} title={page} items={collections.includes(page) ? filtered.filter(item => item.collection === page) : filtered} view={view} setView={setView} onFavorite={toggleFavorite} onMyDay={toggleMyDay} myDay={myDay} onOpen={setSelectedItem} />
         )}
       </main>
 
       {modalOpen && <AddContentModal onClose={() => setModalOpen(false)} onAdd={addItem} />}
+      {selectedItem && <ContentViewerModal item={selectedItem} onClose={() => setSelectedItem(null)} />}
     </div>
   )
 }
 
-function HomePage({ items, myDay, onNavigate, onFavorite, onAdd }: {
+function HomePage({ items, myDay, onNavigate, onFavorite, onAdd, onOpen }: {
   items: LibraryItem[]
   myDay: string[]
   onNavigate: (page: string) => void
   onFavorite: (id: string) => void
   onAdd: () => void
+  onOpen: (item: LibraryItem) => void
 }) {
   const date = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date())
   const dayItems = items.filter(item => myDay.includes(item.id)).slice(0, 3)
@@ -181,7 +185,7 @@ function HomePage({ items, myDay, onNavigate, onFavorite, onAdd }: {
           <div className="progress-track"><span style={{ width: `${Math.round((2 / Math.max(myDay.length, 1)) * 100)}%` }} /></div>
           <div className="day-preview">
             {dayItems.map((item, index) => (
-              <button key={item.id} className={`day-preview-row ${index === 0 ? 'complete' : ''}`}>
+              <button key={item.id} className={`day-preview-row ${index === 0 ? 'complete' : ''}`} onClick={() => onOpen(item)}>
                 <span className="mini-check">{index === 0 && <Check size={13} />}</span>
                 <img src={item.image} alt="" />
                 <div><strong>{item.title}</strong><small>{item.type}{item.duration ? ` · ${item.duration}` : ''}</small></div>
@@ -198,6 +202,7 @@ function HomePage({ items, myDay, onNavigate, onFavorite, onAdd }: {
           <div className="recent-grid">
             {items.slice(0, 3).map(item => (
               <article className="recent-card" key={item.id}>
+                <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
                 <div className="recent-image"><img src={item.image} alt="" /><span>{item.type}</span></div>
                 <h3>{item.title}</h3>
                 <p>{item.category}</p>
@@ -215,6 +220,7 @@ function HomePage({ items, myDay, onNavigate, onFavorite, onAdd }: {
         <div className="mosaic">
           {items.slice(0, 5).map((item, index) => (
             <article className={`mosaic-card mosaic-${index + 1}`} key={item.id}>
+              <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
               <img src={item.image} alt={item.title} />
               <div className="mosaic-overlay"><span>{item.category}</span><h3>{item.title}</h3></div>
               <button className={`card-heart ${item.favorite ? 'active' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button>
@@ -226,7 +232,7 @@ function HomePage({ items, myDay, onNavigate, onFavorite, onAdd }: {
   )
 }
 
-function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay }: {
+function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, onOpen }: {
   title: string
   items: LibraryItem[]
   view: 'grid' | 'list'
@@ -234,6 +240,7 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay }
   onFavorite: (id: string) => void
   onMyDay: (id: string) => void
   myDay: string[]
+  onOpen: (item: LibraryItem) => void
 }) {
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -286,6 +293,7 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay }
         <div className="library-grid">
           {visibleItems.map(item => (
             <article className="content-card" key={item.id}>
+              <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
               <div className="card-image"><img src={item.image} alt={item.title} /><span className="type-pill">{item.type}</span><button className={`card-heart ${item.favorite ? 'active' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button></div>
               <div className="card-copy"><p>{item.category}</p><h3>{item.title}</h3><div className="card-meta"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}<button onClick={() => onMyDay(item.id)} aria-label="Add to My Day" className={myDay.includes(item.id) ? 'in-day' : ''}><Plus size={14} /></button></div></div>
             </article>
@@ -295,6 +303,7 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay }
         <div className="content-feed">
           {visibleItems.map(item => (
             <article className="feed-row" key={item.id}>
+              <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
               <img src={item.image} alt="" />
               <div className="feed-copy"><p>{item.category} · {item.type}</p><h3>{item.title}</h3><span>{item.description}</span></div>
               <div className="feed-status"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}</div>
@@ -308,7 +317,7 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay }
   )
 }
 
-function MyDayPage({ items }: { items: LibraryItem[]; onToggle: (id: string) => void }) {
+function MyDayPage({ items, onOpen }: { items: LibraryItem[]; onOpen: (item: LibraryItem) => void }) {
   const [completed, setCompleted] = useState<string[]>(['3'])
   const date = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date())
   const progress = items.length ? Math.round(completed.length / items.length * 100) : 0
@@ -319,6 +328,7 @@ function MyDayPage({ items }: { items: LibraryItem[]; onToggle: (id: string) => 
       <div className="day-list">
         {items.map(item => (
           <article className={`day-row ${completed.includes(item.id) ? 'complete' : ''}`} key={item.id}>
+            <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
             <button className="day-checkbox" onClick={() => setCompleted(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id])} aria-label="Mark complete">{completed.includes(item.id) && <Check size={15} />}</button>
             <img src={item.image} alt="" />
             <div className="day-item-copy"><p>{item.category}</p><h3>{item.title}</h3></div>
@@ -327,6 +337,78 @@ function MyDayPage({ items }: { items: LibraryItem[]; onToggle: (id: string) => 
           </article>
         ))}
       </div>
+    </div>
+  )
+}
+
+function getSafeUrl(value?: string) {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url : null
+  } catch {
+    return null
+  }
+}
+
+function getYouTubeEmbedUrl(value?: string) {
+  const url = getSafeUrl(value)
+  if (!url) return null
+
+  let videoId = ''
+  if (url.hostname === 'youtu.be') {
+    videoId = url.pathname.slice(1)
+  } else if (['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(url.hostname)) {
+    videoId = url.searchParams.get('v') || url.pathname.match(/^\/(?:embed|shorts)\/([^/]+)/)?.[1] || ''
+  }
+
+  return /^[\w-]{11}$/.test(videoId) ? `https://www.youtube-nocookie.com/embed/${videoId}` : null
+}
+
+function ContentViewerModal({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
+  const sourceUrl = getSafeUrl(item.originalUrl)
+  const youtubeUrl = item.type === 'Video' ? getYouTubeEmbedUrl(item.originalUrl) : null
+  const isPdf = item.type === 'PDF' && sourceUrl && /\.pdf$/i.test(sourceUrl.pathname)
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  return (
+    <div className="modal-backdrop viewer-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="viewer-modal" role="dialog" aria-modal="true" aria-labelledby="viewer-title">
+        <header className="viewer-header">
+          <div><p className="eyebrow">{item.category} · {item.type}</p><h2 id="viewer-title">{item.title}</h2></div>
+          <button className="icon-button" onClick={onClose} aria-label="Close content viewer"><X size={19} /></button>
+        </header>
+        <div className="viewer-body">
+          <div className="viewer-stage">
+            {youtubeUrl ? (
+              <iframe src={youtubeUrl} title={item.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+            ) : isPdf && sourceUrl ? (
+              <iframe src={sourceUrl.href} title={item.title} />
+            ) : item.type === 'Image' ? (
+              <img src={sourceUrl?.href || item.image} alt={item.title} />
+            ) : (
+              <div className="viewer-placeholder">
+                <img src={item.image} alt="" />
+                <span>{item.type === 'Video' ? 'Video preview' : item.type === 'PDF' ? 'PDF preview' : 'Reading view'}</span>
+              </div>
+            )}
+          </div>
+          <aside className="viewer-details">
+            <p className="eyebrow">From your library</p>
+            <h3>{item.title}</h3>
+            <p className="viewer-description">{item.description}</p>
+            <dl><div><dt>Source</dt><dd>{item.author}</dd></div><div><dt>Status</dt><dd>{item.status}</dd></div>{item.duration && <div><dt>Duration</dt><dd>{item.duration}</dd></div>}</dl>
+            {sourceUrl && <a className="primary-button source-link" href={sourceUrl.href} target="_blank" rel="noreferrer">Open original source <ArrowRight size={15} /></a>}
+          </aside>
+        </div>
+      </section>
     </div>
   )
 }
