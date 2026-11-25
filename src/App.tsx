@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import {
-  Archive, ArrowRight, BookOpen, Check, Clock3, FolderOpen,
+  Archive, ArrowRight, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, FolderOpen,
   Grid2X2, Heart, History, Home, LayoutList, Menu, Pencil, Plus, Search,
   Settings, Sun, Trash2, X,
 } from 'lucide-react'
@@ -117,6 +117,12 @@ function App() {
   const toggleMyDay = (id: string) => setMyDay(current =>
     current.includes(id) ? current.filter(value => value !== id) : [...current, id]
   )
+
+  const addItemToCollection = (itemId: string, collectionName: string) => {
+    setItems(current => current.map(item => item.id === itemId
+      ? { ...item, collection: collectionName }
+      : item))
+  }
 
   const addItem = (item: Omit<LibraryItem, 'id' | 'createdAt' | 'status' | 'favorite'>) => {
     setItems(current => [{
@@ -244,7 +250,9 @@ function App() {
             myDay={myDay}
             onOpen={setSelectedItem}
             collections={collections}
+            libraryItems={filtered}
             collection={collections.find(value => value.name === page)}
+            onAddToCollection={addItemToCollection}
             onEditCollection={openCollectionEditor}
             onDeleteCollection={collection => setDeletingCollection(collection)}
           />
@@ -475,7 +483,7 @@ function HomePage({ items, myDay, onNavigate, onFavorite, onAdd, onOpen }: {
   )
 }
 
-function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, onOpen, collections, collection, onEditCollection, onDeleteCollection }: {
+function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, onOpen, collections, libraryItems, collection, onAddToCollection, onEditCollection, onDeleteCollection }: {
   title: string
   items: LibraryItem[]
   view: 'grid' | 'list'
@@ -485,7 +493,9 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
   myDay: string[]
   onOpen: (item: LibraryItem) => void
   collections: Collection[]
+  libraryItems?: LibraryItem[]
   collection?: Collection
+  onAddToCollection?: (itemId: string, collectionName: string) => void
   onEditCollection?: (collection: Collection) => void
   onDeleteCollection?: (collection: Collection) => void
 }) {
@@ -493,6 +503,13 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
   const [statusFilter, setStatusFilter] = useState('')
   const [collectionFilter, setCollectionFilter] = useState('all')
   const [sortOrder, setSortOrder] = useState('newest')
+  const [suggestionPage, setSuggestionPage] = useState(0)
+  const collectionSuggestions = collection
+    ? (libraryItems || []).filter(item => !item.collection?.trim())
+    : []
+  const suggestionPageCount = Math.ceil(collectionSuggestions.length / 20)
+  const currentSuggestionPage = Math.min(suggestionPage, Math.max(suggestionPageCount - 1, 0))
+  const pagedSuggestions = collectionSuggestions.slice(currentSuggestionPage * 20, currentSuggestionPage * 20 + 20)
   const visibleItems = items
     .filter(item => !typeFilter || item.type === typeFilter)
     .filter(item => !statusFilter || item.status === statusFilter)
@@ -563,6 +580,48 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
             </article>
           ))}
         </div>
+      )}
+      {collection && (
+        <section className="collection-suggestions" aria-labelledby="collection-suggestions-title">
+          <div className="collection-suggestions-heading">
+            <div>
+              <p className="eyebrow">From My Library</p>
+              <h2 id="collection-suggestions-title">Add to {collection.name}</h2>
+              <p>Choose an uncollected item to add it to this collection.</p>
+            </div>
+            <span>{collectionSuggestions.length} available</span>
+          </div>
+          {pagedSuggestions.length === 0 ? (
+            <p className="collection-suggestions-empty">No uncollected items are available in My Library.</p>
+          ) : (
+            <div className="library-grid collection-suggestion-grid">
+              {pagedSuggestions.map(item => (
+                <article className="content-card" key={item.id}>
+                  <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
+                  <div className="card-image"><img src={item.image} alt={item.title} /><span className="type-pill">{item.type}</span></div>
+                  <div className="card-copy">
+                    <p>{item.category}</p>
+                    <h3>{item.title}</h3>
+                    <div className="card-meta"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}</div>
+                    <ContentTags item={item} />
+                    <button
+                      className="add-suggestion-button"
+                      aria-label={`Add ${item.title} to ${collection.name}`}
+                      onClick={() => onAddToCollection?.(item.id, collection.name)}
+                    ><Plus size={14} />Add to collection</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          {suggestionPageCount > 1 && (
+            <nav className="collection-pagination" aria-label="Library suggestions pages">
+              <button aria-label="Previous page" disabled={currentSuggestionPage === 0} onClick={() => setSuggestionPage(currentSuggestionPage - 1)}><ChevronLeft size={16} /></button>
+              <span>Page {currentSuggestionPage + 1} of {suggestionPageCount}</span>
+              <button aria-label="Next page" disabled={currentSuggestionPage >= suggestionPageCount - 1} onClick={() => setSuggestionPage(currentSuggestionPage + 1)}><ChevronRight size={16} /></button>
+            </nav>
+          )}
+        </section>
       )}
     </div>
   )
