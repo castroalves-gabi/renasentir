@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
+import type { ChangeEvent, DragEvent, FormEvent } from 'react'
 import {
   Archive, ArrowRight, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, FolderOpen,
-  Grid2X2, Heart, History, Home, LayoutList, Menu, Pencil, Plus, Search,
+  Grid2X2, GripVertical, Heart, History, Home, LayoutList, Menu, Pencil, Plus, Search,
   Settings, Sun, Trash2, X,
 } from 'lucide-react'
 import './App.css'
@@ -31,11 +31,16 @@ type LibraryItem = {
   favorite: boolean
   image: string
   createdAt: string
-  collection?: string | null
+  collections: string[]
   originalUrl?: string
   mediaDataUrl?: string
   channelName?: string
   duration?: string
+}
+
+type PersistedLibraryItem = Omit<LibraryItem, 'collections'> & {
+  collections?: string[]
+  collection?: string | null
 }
 
 const initialCollections: Collection[] = [
@@ -45,7 +50,7 @@ const initialCollections: Collection[] = [
 const maxImageSizeBytes = 1_000_000
 const fallbackImage = 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=900&q=85'
 
-const seedItems: LibraryItem[] = [
+const seedItems: PersistedLibraryItem[] = [
   { id: '1', title: 'The Golden Ratio in Renaissance Art', description: 'A visual essay tracing proportion, harmony and the search for beauty.', type: 'Video', category: 'Art & Design', author: 'Museum of Thought', status: 'In progress', favorite: true, image: 'https://images.unsplash.com/photo-1547891654-e66ed7ebb968?auto=format&fit=crop&w=900&q=85', createdAt: '2026-11-24', duration: '18 min' },
   { id: '2', title: 'Notes on the Sacred Grove', description: 'Botanical observations gathered from an imagined Renaissance manuscript.', type: 'Text', category: 'Botany', author: 'Elena Morandi', status: 'Not started', favorite: false, image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=85', createdAt: '2026-11-23' },
   { id: '3', title: 'Understanding Classical Perspective', description: 'A practical course about vanishing points and spatial composition.', type: 'Course', category: 'Art & Design', author: 'Atelier Digital', status: 'Completed', favorite: true, image: 'https://images.unsplash.com/photo-1578301978018-3005759f48f7?auto=format&fit=crop&w=900&q=85', createdAt: '2026-11-21', duration: '4h 20m' },
@@ -53,6 +58,18 @@ const seedItems: LibraryItem[] = [
   { id: '5', title: 'Windows, Shadows & Morning Light', description: 'A photographic study of quiet architectural moments.', type: 'Image', category: 'Photography', author: 'Noemi Archive', status: 'Not started', favorite: true, image: 'https://images.unsplash.com/photo-1511818966892-d7d671e672a2?auto=format&fit=crop&w=900&q=85', createdAt: '2026-11-18' },
   { id: '6', title: 'The Architecture of Memory', description: 'How spaces shape recollection, place and imaginative interior worlds.', type: 'Text', category: 'Culture', author: 'Commonplace Review', status: 'In progress', favorite: false, image: 'https://images.unsplash.com/photo-1487958449943-2429e8be8625?auto=format&fit=crop&w=900&q=85', createdAt: '2026-11-16', duration: '12 min' },
 ]
+
+function loadLibraryItems(): LibraryItem[] {
+  const saved = localStorage.getItem('renasentir-library')
+  const storedItems: PersistedLibraryItem[] = saved ? JSON.parse(saved) : seedItems
+  return storedItems.map(({ collection, collections, ...item }) => ({
+    ...item,
+    collections: [...new Set([
+      ...(Array.isArray(collections) ? collections.filter((name): name is string => typeof name === 'string') : []),
+      ...(typeof collection === 'string' && collection.trim() ? [collection] : []),
+    ])],
+  }))
+}
 
 const navItems = [
   { label: 'Home', icon: Home },
@@ -64,10 +81,7 @@ const navItems = [
 
 function App() {
   const [page, setPage] = useState('Home')
-  const [items, setItems] = useState<LibraryItem[]>(() => {
-    const saved = localStorage.getItem('renasentir-library')
-    return saved ? JSON.parse(saved) : seedItems
-  })
+  const [items, setItems] = useState<LibraryItem[]>(loadLibraryItems)
   const [collections, setCollections] = useState<Collection[]>(() => {
     const saved = localStorage.getItem('renasentir-collections')
     return saved ? JSON.parse(saved) : initialCollections
@@ -76,8 +90,11 @@ function App() {
   const [modalOpen, setModalOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [manualOrder, setManualOrder] = useState<string[]>(() => JSON.parse(localStorage.getItem('renasentir-manual-order') || '[]'))
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
+  const [editingItem, setEditingItem] = useState<LibraryItem | null>(null)
+  const [deletingItem, setDeletingItem] = useState<LibraryItem | null>(null)
   const [storageError, setStorageError] = useState('')
   const [collectionStorageError, setCollectionStorageError] = useState('')
   const [collectionModalOpen, setCollectionModalOpen] = useState(false)
@@ -100,6 +117,7 @@ function App() {
     }
   }, [collections])
   useEffect(() => localStorage.setItem('renasentir-my-day', JSON.stringify(myDay)), [myDay])
+  useEffect(() => localStorage.setItem('renasentir-manual-order', JSON.stringify(manualOrder)), [manualOrder])
 
   const openCollectionEditor = (collection: Collection | null = null) => {
     setEditingCollection(collection)
@@ -118,10 +136,40 @@ function App() {
     current.includes(id) ? current.filter(value => value !== id) : [...current, id]
   )
 
-  const addItemToCollection = (itemId: string, collectionName: string) => {
-    setItems(current => current.map(item => item.id === itemId
-      ? { ...item, collection: collectionName }
-      : item))
+  const setItemCollectionMembership = (itemId: string, collectionName: string, selected: boolean) => {
+    setItems(current => current.map(item => {
+      if (item.id !== itemId) return item
+      const collections = selected
+        ? [...new Set([...item.collections, collectionName])]
+        : item.collections.filter(name => name !== collectionName)
+      return { ...item, collections }
+    }))
+    setSelectedItem(current => current?.id !== itemId ? current : {
+      ...current,
+      collections: selected
+        ? [...new Set([...current.collections, collectionName])]
+        : current.collections.filter(name => name !== collectionName),
+    })
+  }
+
+  const addItemToCollection = (itemId: string, collectionName: string) => setItemCollectionMembership(itemId, collectionName, true)
+
+  const updateItem = (updatedItem: LibraryItem) => {
+    setItems(current => current.map(item => item.id === updatedItem.id ? updatedItem : item))
+    setEditingItem(null)
+  }
+
+  const updateItemStatus = (itemId: string, status: Status) => {
+    setItems(current => current.map(item => item.id === itemId ? { ...item, status } : item))
+    setSelectedItem(current => current?.id === itemId ? { ...current, status } : current)
+  }
+
+  const deleteItem = (itemId: string) => {
+    setItems(current => current.filter(item => item.id !== itemId))
+    setMyDay(current => current.filter(id => id !== itemId))
+    setSelectedItem(null)
+    setEditingItem(null)
+    setDeletingItem(null)
   }
 
   const addItem = (item: Omit<LibraryItem, 'id' | 'createdAt' | 'status' | 'favorite'>) => {
@@ -145,8 +193,8 @@ function App() {
     if (existing) {
       setCollections(current => current.map(collection => collection.id === existing.id ? savedCollection : collection))
       if (existing.name !== savedCollection.name) {
-        setItems(current => current.map(item => item.collection === existing.name
-          ? { ...item, collection: savedCollection.name }
+        setItems(current => current.map(item => item.collections.includes(existing.name)
+          ? { ...item, collections: item.collections.map(name => name === existing.name ? savedCollection.name : name) }
           : item))
       }
     } else {
@@ -158,8 +206,8 @@ function App() {
   const deleteCollection = (collection: Collection) => {
     setCollectionStorageError('')
     setCollections(current => current.filter(value => value.id !== collection.id))
-    setItems(current => current.map(item => item.collection === collection.name
-      ? { ...item, collection: null }
+    setItems(current => current.map(item => item.collections.includes(collection.name)
+      ? { ...item, collections: item.collections.filter(name => name !== collection.name) }
       : item))
     if (page === collection.name) setPage('Collections')
     setDeletingCollection(null)
@@ -235,6 +283,8 @@ function App() {
             myDay={myDay}
             onOpen={setSelectedItem}
             collections={collections}
+            manualOrder={manualOrder}
+            onSaveManualOrder={setManualOrder}
           />
         ) : page === 'My Day' ? (
           <MyDayPage items={items.filter(item => myDay.includes(item.id))} onOpen={setSelectedItem} />
@@ -242,7 +292,7 @@ function App() {
           <LibraryPage
             key={page}
             title={page}
-            items={collections.some(collection => collection.name === page) ? filtered.filter(item => item.collection === page) : filtered}
+            items={collections.some(collection => collection.name === page) ? filtered.filter(item => item.collections.includes(page)) : filtered}
             view={view}
             setView={setView}
             onFavorite={toggleFavorite}
@@ -250,6 +300,8 @@ function App() {
             myDay={myDay}
             onOpen={setSelectedItem}
             collections={collections}
+            manualOrder={manualOrder}
+            onSaveManualOrder={setManualOrder}
             libraryItems={filtered}
             collection={collections.find(value => value.name === page)}
             onAddToCollection={addItemToCollection}
@@ -270,7 +322,17 @@ function App() {
         />
       )}
       {deletingCollection && <DeleteCollectionModal collection={deletingCollection} onCancel={() => setDeletingCollection(null)} onConfirm={() => deleteCollection(deletingCollection)} />}
-      {selectedItem && <ContentViewerModal item={selectedItem} onClose={() => setSelectedItem(null)} />}
+      {editingItem && <ItemEditorModal item={editingItem} onClose={() => setEditingItem(null)} onSave={updateItem} onDelete={() => { setDeletingItem(editingItem); setEditingItem(null) }} />}
+      {deletingItem && <DeleteItemModal item={deletingItem} onCancel={() => setDeletingItem(null)} onConfirm={() => deleteItem(deletingItem.id)} />}
+      {selectedItem && <ContentViewerModal
+        item={selectedItem}
+        collections={collections}
+        onClose={() => setSelectedItem(null)}
+        onCollectionChange={(name, selected) => setItemCollectionMembership(selectedItem.id, name, selected)}
+        onEdit={() => { setEditingItem(selectedItem); setSelectedItem(null) }}
+        onStatusChange={status => updateItemStatus(selectedItem.id, status)}
+        onCreateCollection={() => openCollectionEditor()}
+      />}
     </div>
   )
 }
@@ -293,7 +355,7 @@ function CollectionsPage({ collections, items, onOpen, onEdit, onDelete }: {
       ) : (
         <div className="collection-grid">
           {collections.map(collection => {
-            const count = items.filter(item => item.collection === collection.name).length
+            const count = items.filter(item => item.collections.includes(collection.name)).length
             return (
               <article className="collection-card" key={collection.id}>
                 <button className="content-open-overlay" onClick={() => onOpen(collection)} aria-label={`Open ${collection.name}`} />
@@ -483,7 +545,7 @@ function HomePage({ items, myDay, onNavigate, onFavorite, onAdd, onOpen }: {
   )
 }
 
-function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, onOpen, collections, libraryItems, collection, onAddToCollection, onEditCollection, onDeleteCollection }: {
+function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, onOpen, collections, manualOrder, onSaveManualOrder, libraryItems, collection, onAddToCollection, onEditCollection, onDeleteCollection }: {
   title: string
   items: LibraryItem[]
   view: 'grid' | 'list'
@@ -493,6 +555,8 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
   myDay: string[]
   onOpen: (item: LibraryItem) => void
   collections: Collection[]
+  manualOrder: string[]
+  onSaveManualOrder: (order: string[]) => void
   libraryItems?: LibraryItem[]
   collection?: Collection
   onAddToCollection?: (itemId: string, collectionName: string) => void
@@ -503,23 +567,99 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
   const [statusFilter, setStatusFilter] = useState('')
   const [collectionFilter, setCollectionFilter] = useState('all')
   const [sortOrder, setSortOrder] = useState('newest')
+  const [organizing, setOrganizing] = useState(false)
+  const [draftOrder, setDraftOrder] = useState(manualOrder)
+  const [draggedId, setDraggedId] = useState<string | null>(null)
   const [suggestionPage, setSuggestionPage] = useState(0)
   const collectionSuggestions = collection
-    ? (libraryItems || []).filter(item => !item.collection?.trim())
+    ? (libraryItems || []).filter(item => !item.collections.includes(collection.name))
     : []
   const suggestionPageCount = Math.ceil(collectionSuggestions.length / 20)
   const currentSuggestionPage = Math.min(suggestionPage, Math.max(suggestionPageCount - 1, 0))
   const pagedSuggestions = collectionSuggestions.slice(currentSuggestionPage * 20, currentSuggestionPage * 20 + 20)
-  const visibleItems = items
+  const filteredItems = items
     .filter(item => !typeFilter || item.type === typeFilter)
     .filter(item => !statusFilter || item.status === statusFilter)
     .filter(item => collectionFilter === 'all'
-      || (collectionFilter === 'none' ? !item.collection : item.collection === collectionFilter))
-    .sort((a, b) => {
+      || (collectionFilter === 'none' ? item.collections.length === 0 : item.collections.includes(collectionFilter)))
+  const sortByCurrentFilter = (a: LibraryItem, b: LibraryItem) => {
+      if (sortOrder === 'manual') {
+        const currentOrder = organizing ? draftOrder : manualOrder
+        const aIndex = currentOrder.indexOf(a.id)
+        const bIndex = currentOrder.indexOf(b.id)
+        if (aIndex >= 0 && bIndex >= 0) return aIndex - bIndex
+        if (aIndex >= 0) return -1
+        if (bIndex >= 0) return 1
+        return b.createdAt.localeCompare(a.createdAt)
+      }
       if (sortOrder === 'oldest') return a.createdAt.localeCompare(b.createdAt)
       if (sortOrder === 'title') return a.title.localeCompare(b.title)
       return b.createdAt.localeCompare(a.createdAt)
+  }
+  const visibleItems = [...filteredItems].sort(sortByCurrentFilter)
+  const orderedItems = sortOrder === 'manual'
+    ? visibleItems.filter(item => (organizing ? draftOrder : manualOrder).includes(item.id))
+    : visibleItems
+  const unorganizedItems = sortOrder === 'manual'
+    ? visibleItems.filter(item => !(organizing ? draftOrder : manualOrder).includes(item.id))
+    : []
+
+  const startOrdering = () => {
+    setDraftOrder(manualOrder)
+    setOrganizing(true)
+  }
+  const startDrag = (event: DragEvent<HTMLButtonElement>, itemId: string) => {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', itemId)
+    setDraggedId(itemId)
+  }
+  const dropOnItem = (targetId: string) => {
+    if (!draggedId || draggedId === targetId) return
+    setDraftOrder(current => {
+      const next = current.filter(id => id !== draggedId)
+      const targetIndex = next.indexOf(targetId)
+      next.splice(targetIndex < 0 ? next.length : targetIndex, 0, draggedId)
+      return next
     })
+    setDraggedId(null)
+  }
+  const dropAtEnd = () => {
+    if (!draggedId) return
+    setDraftOrder(current => [...current.filter(id => id !== draggedId), draggedId])
+    setDraggedId(null)
+  }
+  const removeFromOrder = () => {
+    if (!draggedId) return
+    setDraftOrder(current => current.filter(id => id !== draggedId))
+    setDraggedId(null)
+  }
+
+  const renderLibraryGroup = (groupItems: LibraryItem[], groupName: string) => view === 'grid' ? (
+    <div className="library-grid" key={groupName}>
+      {groupItems.map(item => <article className="content-card" key={item.id} onDragOver={event => organizing && event.preventDefault()} onDrop={() => organizing && dropOnItem(item.id)}>
+        {organizing && <button className="manual-drag-handle" draggable aria-label={`Reorder ${item.title}`} onDragStart={event => startDrag(event, item.id)} onDragEnd={() => setDraggedId(null)}><GripVertical size={17} /></button>}
+        <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
+        <div className="card-image"><img src={item.image} alt={item.title} /><span className="type-pill">{item.type}</span><button className={`card-heart ${item.favorite ? 'active' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button></div>
+        <div className="card-copy"><p>{item.category}</p><h3>{item.title}</h3><div className="card-meta"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}<button onClick={() => onMyDay(item.id)} aria-label="Add to My Day" className={myDay.includes(item.id) ? 'in-day' : ''}><Plus size={14} /></button></div><ContentTags item={item} /></div>
+      </article>)}
+      {organizing && groupName === 'ordered' && <button className="manual-order-dropzone" onDragOver={event => event.preventDefault()} onDrop={dropAtEnd}>Drop here to add to the end of your order</button>}
+      {organizing && groupName === 'unorganized' && <button className="manual-order-dropzone" onDragOver={event => event.preventDefault()} onDrop={removeFromOrder}>Drop here to remove from your order</button>}
+    </div>
+  ) : (
+    <div className="content-feed" key={groupName}>
+      {groupItems.map(item => <article className="feed-row" key={item.id} onDragOver={event => organizing && event.preventDefault()} onDrop={() => organizing && dropOnItem(item.id)}>
+        {organizing && <button className="manual-drag-handle" draggable aria-label={`Reorder ${item.title}`} onDragStart={event => startDrag(event, item.id)} onDragEnd={() => setDraggedId(null)}><GripVertical size={17} /></button>}
+        <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
+        <img src={item.image} alt="" />
+        <div className="feed-copy"><p>{item.category} · {item.type}</p><h3>{item.title}</h3><span>{item.description}</span><ContentTags item={item} /></div>
+        <div className="feed-status"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}</div>
+        <button className={`square-button ${myDay.includes(item.id) ? 'in-day' : ''}`} onClick={() => onMyDay(item.id)} aria-label="Add to My Day"><Plus size={16} /></button>
+        <button className={`square-button ${item.favorite ? 'favorite' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button>
+      </article>)}
+      {organizing && groupName === 'ordered' && <button className="manual-order-dropzone" onDragOver={event => event.preventDefault()} onDrop={dropAtEnd}>Drop here to add to the end of your order</button>}
+      {organizing && groupName === 'unorganized' && <button className="manual-order-dropzone" onDragOver={event => event.preventDefault()} onDrop={removeFromOrder}>Drop here to remove from your order</button>}
+    </div>
+  )
 
   return (
     <div className="page library-page">
@@ -548,39 +688,24 @@ function LibraryPage({ title, items, view, setView, onFavorite, onMyDay, myDay, 
           <option value="none">Without collection</option>
           {collections.map(value => <option key={value.id}>{value.name}</option>)}
         </select>
-        <select aria-label="Sort library items" value={sortOrder} onChange={event => setSortOrder(event.target.value)}>
+        <select aria-label="Sort library items" value={sortOrder} onChange={event => { setSortOrder(event.target.value); setOrganizing(false) }}>
           <option value="newest">Recently added</option>
           <option value="oldest">Oldest first</option>
           <option value="title">Title</option>
+          <option value="manual">My order</option>
         </select>
+        {sortOrder === 'manual' && (organizing ? <div className="manual-order-controls"><button className="secondary-button" onClick={() => { setDraftOrder(manualOrder); setOrganizing(false) }}>Cancel</button><button className="primary-button" onClick={() => { onSaveManualOrder(draftOrder); setOrganizing(false) }}><Check size={14} />Save order</button></div> : <button className="secondary-button manual-order-button" onClick={startOrdering}><GripVertical size={15} />Organize</button>)}
         <span>{visibleItems.length} items</span>
       </div>
       {visibleItems.length === 0 ? (
         <div className="empty-state"><BookOpen size={38} /><h2>No discoveries yet</h2><p>Add something that sparks your curiosity.</p></div>
-      ) : view === 'grid' ? (
-        <div className="library-grid">
-          {visibleItems.map(item => (
-            <article className="content-card" key={item.id}>
-              <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
-              <div className="card-image"><img src={item.image} alt={item.title} /><span className="type-pill">{item.type}</span><button className={`card-heart ${item.favorite ? 'active' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button></div>
-              <div className="card-copy"><p>{item.category}</p><h3>{item.title}</h3><div className="card-meta"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}<button onClick={() => onMyDay(item.id)} aria-label="Add to My Day" className={myDay.includes(item.id) ? 'in-day' : ''}><Plus size={14} /></button></div><ContentTags item={item} /></div>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <div className="content-feed">
-          {visibleItems.map(item => (
-            <article className="feed-row" key={item.id}>
-              <button className="content-open-overlay" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`} />
-              <img src={item.image} alt="" />
-              <div className="feed-copy"><p>{item.category} · {item.type}</p><h3>{item.title}</h3><span>{item.description}</span><ContentTags item={item} /></div>
-              <div className="feed-status"><span className={`status-dot ${item.status.toLowerCase().replaceAll(' ', '-')}`} />{item.status}</div>
-              <button className={`square-button ${myDay.includes(item.id) ? 'in-day' : ''}`} onClick={() => onMyDay(item.id)} aria-label="Add to My Day"><Plus size={16} /></button>
-              <button className={`square-button ${item.favorite ? 'favorite' : ''}`} onClick={() => onFavorite(item.id)} aria-label="Favorite"><Heart size={16} fill={item.favorite ? 'currentColor' : 'none'} /></button>
-            </article>
-          ))}
-        </div>
-      )}
+      ) : sortOrder === 'manual' ? (
+        <section className={`manual-order-sections ${organizing ? 'is-organizing' : ''}`} aria-label="My order">
+          {orderedItems.length ? renderLibraryGroup(orderedItems, 'ordered') : organizing && <div className="manual-order-empty" onDragOver={event => event.preventDefault()} onDrop={dropAtEnd}>Drop content here to start your order.</div>}
+          <div className="manual-order-divider"><span>{organizing ? 'Drag items below into your order' : 'Not yet ordered'}</span></div>
+          {unorganizedItems.length ? renderLibraryGroup(unorganizedItems, 'unorganized') : <p className="manual-order-complete">All filtered items are in your order.</p>}
+        </section>
+      ) : renderLibraryGroup(visibleItems, 'all')}
       {collection && (
         <section className="collection-suggestions" aria-labelledby="collection-suggestions-title">
           <div className="collection-suggestions-heading">
@@ -717,13 +842,13 @@ function getVideoChannelName(item: LibraryItem) {
 
 function ContentTags({ item }: { item: LibraryItem }) {
   const channelName = getVideoChannelName(item)
-  const collection = item.collection?.trim()
-  if (!channelName && !collection) return null
+  const itemCollections = item.collections
+  if (!channelName && !itemCollections.length) return null
 
   return (
     <div className="content-tags">
-      {collection && <span className="content-tag">{collection}</span>}
-      {collection && channelName && <span className="tag-separator" aria-hidden="true" />}
+      {itemCollections.map((collection, index) => <span className="content-tag" key={collection}>{index > 0 && <span className="tag-separator" aria-hidden="true" />}{collection}</span>)}
+      {itemCollections.length > 0 && channelName && <span className="tag-separator" aria-hidden="true" />}
       {channelName && <span className="content-tag">{channelName}</span>}
     </div>
   )
@@ -749,7 +874,16 @@ function readImageAsDataUrl(file: File) {
   })
 }
 
-function ContentViewerModal({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
+function ContentViewerModal({ item, collections, onClose, onCollectionChange, onEdit, onStatusChange, onCreateCollection }: {
+  item: LibraryItem
+  collections: Collection[]
+  onClose: () => void
+  onCollectionChange: (name: string, selected: boolean) => void
+  onEdit: () => void
+  onStatusChange: (status: Status) => void
+  onCreateCollection: () => void
+}) {
+  const [collectionsOpen, setCollectionsOpen] = useState(false)
   const sourceUrl = getSafeUrl(item.originalUrl)
   const youtubeUrl = item.type === 'Video' ? getYouTubeEmbedUrl(item.originalUrl) : null
   const isPdf = item.type === 'PDF' && sourceUrl && /\.pdf$/i.test(sourceUrl.pathname)
@@ -788,13 +922,91 @@ function ContentViewerModal({ item, onClose }: { item: LibraryItem; onClose: () 
             <p className="eyebrow">From your library</p>
             <h3>{item.title}</h3>
             <p className="viewer-description">{item.description}</p>
-            <dl><div><dt>Source</dt><dd>{item.author}</dd></div><div><dt>Status</dt><dd>{item.status}</dd></div>{item.duration && <div><dt>Duration</dt><dd>{item.duration}</dd></div>}</dl>
+            <dl><div><dt>Source</dt><dd>{item.author}</dd></div><div><dt>Status</dt><dd><select className="viewer-status-select" aria-label="Change content status" value={item.status} onChange={event => onStatusChange(event.target.value as Status)}>{(['Not started', 'In progress', 'Completed', 'Paused'] as Status[]).map(status => <option key={status}>{status}</option>)}</select></dd></div>{item.duration && <div><dt>Duration</dt><dd>{item.duration}</dd></div>}</dl>
+            <div className="viewer-actions">
+              <div className="viewer-action-menu">
+                <button className="secondary-button" onClick={onEdit}>Manage <ChevronRight size={14} /></button>
+              </div>
+              <div className="viewer-action-menu">
+                <button className="secondary-button" aria-haspopup="dialog" onClick={() => setCollectionsOpen(true)}><FolderOpen size={15} />Collections <span className="selection-count">{item.collections.length}</span></button>
+              </div>
+            </div>
             {sourceUrl && <a className="primary-button source-link" href={sourceUrl.href} target="_blank" rel="noreferrer">Open original source <ArrowRight size={15} /></a>}
           </aside>
         </div>
       </section>
+      {collectionsOpen && <CollectionMembershipModal
+        item={item}
+        collections={collections}
+        onClose={() => setCollectionsOpen(false)}
+        onChange={onCollectionChange}
+        onCreate={onCreateCollection}
+      />}
     </div>
   )
+}
+
+function CollectionMembershipModal({ item, collections, onClose, onChange, onCreate }: {
+  item: LibraryItem
+  collections: Collection[]
+  onClose: () => void
+  onChange: (name: string, selected: boolean) => void
+  onCreate: () => void
+}) {
+  return <div className="modal-backdrop viewer-collections-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="modal viewer-collections-modal" role="dialog" aria-modal="true" aria-labelledby="viewer-collections-title">
+      <div className="modal-header"><div><p className="eyebrow">Organize content</p><h2 id="viewer-collections-title">Collections</h2></div><button className="icon-button" onClick={onClose} aria-label="Close collections"><X size={18} /></button></div>
+      <p className="viewer-collections-description">Choose the collections for “{item.title}”.</p>
+      <div className="viewer-collections-list">
+        {collections.map(collection => <label key={collection.id} className="collection-check"><input type="checkbox" checked={item.collections.includes(collection.name)} onChange={event => onChange(collection.name, event.target.checked)} /><span className="collection-check-name"><span className="collection-dot" style={{ backgroundColor: collection.color }} />{collection.name}</span></label>)}
+        {!collections.length && <p className="empty-collections-message">No collections yet. Create one to organize this content.</p>}
+      </div>
+      <div className="modal-actions viewer-collections-actions"><button className="secondary-button" onClick={onCreate}><Plus size={15} />Create collection</button><button className="primary-button" onClick={onClose}>Done</button></div>
+    </section>
+  </div>
+}
+
+function ItemEditorModal({ item, onClose, onSave, onDelete }: { item: LibraryItem; onClose: () => void; onSave: (item: LibraryItem) => void; onDelete: () => void }) {
+  const [draft, setDraft] = useState(item)
+  const [imageError, setImageError] = useState('')
+  const set = (field: 'title' | 'description' | 'category' | 'author' | 'type' | 'status', value: string) => setDraft(current => ({ ...current, [field]: value } as LibraryItem))
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="modal" role="dialog" aria-modal="true" aria-labelledby="item-editor-title">
+      <div className="modal-header"><div><p className="eyebrow">Library item</p><h2 id="item-editor-title">Edit content</h2></div><button className="icon-button" onClick={onClose} aria-label="Close editor"><X size={18} /></button></div>
+      <form onSubmit={event => { event.preventDefault(); onSave(draft) }}>
+        <label>Title<input required value={draft.title} onChange={event => set('title', event.target.value)} /></label>
+        <label>Description<input value={draft.description} onChange={event => set('description', event.target.value)} /></label>
+        <label>URL<input type="url" value={draft.originalUrl || ''} placeholder="https://…" onChange={event => setDraft(current => ({ ...current, originalUrl: event.target.value }))} /></label>
+        <div className="form-row"><label>Category<input value={draft.category} onChange={event => set('category', event.target.value)} /></label><label>Author<input value={draft.author} onChange={event => set('author', event.target.value)} /></label></div>
+        <label>Type<select value={draft.type} onChange={event => set('type', event.target.value)}>{(['Text', 'Video', 'Course', 'PDF', 'Image'] as ContentType[]).map(type => <option key={type}>{type}</option>)}</select></label>
+        <label>Image URL<input type="url" value={draft.image.startsWith('data:') ? '' : draft.image} placeholder="https://…" onChange={event => { setImageError(''); setDraft(current => ({ ...current, image: event.target.value, mediaDataUrl: undefined })) }} /></label>
+        <label>Or upload an image<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={async event => {
+          const file = event.target.files?.[0]
+          if (!file) return
+          try {
+            const dataUrl = await readImageAsDataUrl(file)
+            setDraft(current => ({ ...current, image: dataUrl, mediaDataUrl: dataUrl }))
+            setImageError('')
+          } catch (error) {
+            setImageError(error instanceof Error ? error.message : 'The image could not be read.')
+          }
+        }} /></label>
+        {imageError && <p className="form-error" role="alert">{imageError}</p>}
+        {draft.image && <div className="cover-preview"><img src={draft.mediaDataUrl || draft.image} alt="Content cover preview" /><span>Image preview</span></div>}
+        <div className="modal-actions edit-item-actions"><button type="button" className="danger-button" onClick={onDelete}><Trash2 size={15} />Delete content</button><span /><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Check size={15} />Save changes</button></div>
+      </form>
+    </section>
+  </div>
+}
+
+function DeleteItemModal({ item, onCancel, onConfirm }: { item: LibraryItem; onCancel: () => void; onConfirm: () => void }) {
+  return <div className="modal-backdrop collection-editor-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onCancel() }}>
+    <section className="modal delete-collection-modal" role="dialog" aria-modal="true" aria-labelledby="delete-item-title">
+      <div className="modal-header"><div><p className="eyebrow">Library item</p><h2 id="delete-item-title">Delete content?</h2></div><button className="icon-button" onClick={onCancel} aria-label="Close confirmation"><X size={18} /></button></div>
+      <div className="delete-collection-copy"><p><strong>{item.title}</strong> will be removed from your library and My Day.</p></div>
+      <div className="modal-actions"><button className="secondary-button" onClick={onCancel}>Cancel</button><button className="danger-button" onClick={onConfirm}><Trash2 size={15} />Delete</button></div>
+    </section>
+  </div>
 }
 
 function AddContentModal({ onClose, onAdd, collections, onSaveCollection }: {
