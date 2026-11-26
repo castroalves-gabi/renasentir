@@ -3,7 +3,7 @@ import type { ChangeEvent, DragEvent, FormEvent } from 'react'
 import {
   Archive, ArrowRight, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, FolderOpen,
   Grid2X2, GripVertical, Heart, History, Home, LayoutList, Menu, Pencil, Plus, Search,
-  Settings, Star, Sun, Trash2, X,
+  Settings, Star, Sun, Trash2, UserRound, X,
 } from 'lucide-react'
 import './App.css'
 
@@ -20,6 +20,7 @@ type Collection = {
 }
 
 type CollectionDraft = Omit<Collection, 'id'>
+type Profile = { name: string; email: string; about: string }
 
 type LibraryItem = {
   id: string
@@ -50,6 +51,7 @@ const initialCollections: Collection[] = [
 ]
 const maxImageSizeBytes = 1_000_000
 const fallbackImage = 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=900&q=85'
+const initialProfile: Profile = { name: 'Your name', email: 'you@example.com', about: 'A curious mind collecting ideas, places, and things worth remembering.' }
 
 const seedItems: PersistedLibraryItem[] = [
   { id: '1', title: 'The Golden Ratio in Renaissance Art', description: 'A visual essay tracing proportion, harmony and the search for beauty.', type: 'Video', category: 'Art & Design', author: 'Museum of Thought', status: 'In progress', favorite: true, image: 'https://images.unsplash.com/photo-1547891654-e66ed7ebb968?auto=format&fit=crop&w=900&q=85', createdAt: '2026-11-24', duration: '18 min' },
@@ -78,6 +80,7 @@ const navItems = [
   { label: 'My Day', icon: Sun, count: 4 },
   { label: 'History', icon: History },
   { label: 'Favorites', icon: Heart },
+  { label: 'Profile', icon: UserRound },
 ]
 
 function App() {
@@ -92,6 +95,11 @@ function App() {
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [manualOrder, setManualOrder] = useState<string[]>(() => JSON.parse(localStorage.getItem('renasentir-manual-order') || '[]'))
+  const [profile, setProfile] = useState<Profile>(() => {
+    const saved = localStorage.getItem('renasentir-profile')
+    return saved ? { ...initialProfile, ...JSON.parse(saved) } : initialProfile
+  })
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
   const [editingItem, setEditingItem] = useState<LibraryItem | null>(null)
@@ -119,6 +127,7 @@ function App() {
   }, [collections])
   useEffect(() => localStorage.setItem('renasentir-my-day', JSON.stringify(myDay)), [myDay])
   useEffect(() => localStorage.setItem('renasentir-manual-order', JSON.stringify(manualOrder)), [manualOrder])
+  useEffect(() => localStorage.setItem('renasentir-profile', JSON.stringify(profile)), [profile])
 
   const openCollectionEditor = (collection: Collection | null = null) => {
     setEditingCollection(collection)
@@ -295,6 +304,8 @@ function App() {
           />
         ) : page === 'My Day' ? (
           <MyDayPage items={items.filter(item => myDay.includes(item.id))} onOpen={setSelectedItem} />
+        ) : page === 'Profile' ? (
+          <ProfilePage profile={profile} items={items} collections={collections} onEdit={() => setProfileEditorOpen(true)} />
         ) : (
           <LibraryPage
             key={page}
@@ -331,6 +342,7 @@ function App() {
       {deletingCollection && <DeleteCollectionModal collection={deletingCollection} onCancel={() => setDeletingCollection(null)} onConfirm={() => deleteCollection(deletingCollection)} />}
       {editingItem && <ItemEditorModal item={editingItem} onClose={() => setEditingItem(null)} onSave={updateItem} onDelete={() => { setDeletingItem(editingItem); setEditingItem(null) }} />}
       {deletingItem && <DeleteItemModal item={deletingItem} onCancel={() => setDeletingItem(null)} onConfirm={() => deleteItem(deletingItem.id)} />}
+      {profileEditorOpen && <ProfileEditorModal profile={profile} onClose={() => setProfileEditorOpen(false)} onSave={nextProfile => { setProfile(nextProfile); setProfileEditorOpen(false) }} />}
       {selectedItem && <ContentViewerModal
         item={selectedItem}
         collections={collections}
@@ -783,6 +795,46 @@ function MyDayPage({ items, onOpen }: { items: LibraryItem[]; onOpen: (item: Lib
       </div>
     </div>
   )
+}
+
+function ProfilePage({ profile, items, collections, onEdit }: { profile: Profile; items: LibraryItem[]; collections: Collection[]; onEdit: () => void }) {
+  const initials = profile.name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join('') || 'R'
+  const stats = [
+    { label: 'Library items', value: items.length },
+    { label: 'Collections', value: collections.length },
+    { label: 'Favorites', value: items.filter(item => item.favorite).length },
+    { label: 'Completed', value: items.filter(item => item.status === 'Completed').length },
+  ]
+  return <div className="page profile-page">
+    <div className="page-heading"><div><p className="eyebrow">Your personal space</p><h1>Profile</h1></div></div>
+    <section className="profile-hero">
+      <div className="profile-avatar" aria-hidden="true">{initials}</div>
+      <div className="profile-identity"><p className="eyebrow">Library keeper</p><h2>{profile.name}</h2><p>{profile.email}</p></div>
+      <button className="secondary-button profile-edit-button" onClick={onEdit}><Pencil size={15} />Edit profile</button>
+    </section>
+    <section className="profile-stats" aria-label="Library summary">
+      {stats.map(stat => <article key={stat.label}><span>{stat.label}</span><strong>{stat.value}</strong></article>)}
+    </section>
+    <section className="profile-about">
+      <p className="eyebrow">About</p>
+      <p>{profile.about || 'Add a few words about yourself and what you like to collect.'}</p>
+    </section>
+  </div>
+}
+
+function ProfileEditorModal({ profile, onClose, onSave }: { profile: Profile; onClose: () => void; onSave: (profile: Profile) => void }) {
+  const [draft, setDraft] = useState(profile)
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="modal" role="dialog" aria-modal="true" aria-labelledby="profile-editor-title">
+      <div className="modal-header"><div><p className="eyebrow">Your personal space</p><h2 id="profile-editor-title">Edit profile</h2></div><button className="icon-button" onClick={onClose} aria-label="Close profile editor"><X size={18} /></button></div>
+      <form onSubmit={event => { event.preventDefault(); onSave(draft) }}>
+        <label>Name<input required value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value }))} /></label>
+        <label>Email<input type="email" value={draft.email} onChange={event => setDraft(current => ({ ...current, email: event.target.value }))} /></label>
+        <label>About<textarea className="profile-about-input" value={draft.about} onChange={event => setDraft(current => ({ ...current, about: event.target.value }))} rows={4} /></label>
+        <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Check size={15} />Save profile</button></div>
+      </form>
+    </section>
+  </div>
 }
 
 function getSafeUrl(value?: string) {
