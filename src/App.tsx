@@ -1159,7 +1159,7 @@ function AddContentModal({ onClose, onAdd, collections, onSaveCollection }: {
       author: channelName || 'Personal archive',
       channelName,
       image: previewMode === 'custom' ? customPreview || automaticPreview : automaticPreview,
-      collection: collection || null,
+      collections: collection ? [collection] : [],
       originalUrl: originalUrl?.href,
       mediaDataUrl: type === 'Image' && previewMode === 'custom' ? imageData : undefined,
     })
