@@ -3,7 +3,7 @@ import type { ChangeEvent, DragEvent, FormEvent } from 'react'
 import {
   Archive, ArrowRight, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, FolderOpen,
   Grid2X2, GripVertical, Heart, History, Home, LayoutList, Menu, Pencil, Plus, Search,
-  Settings, Sun, Trash2, X,
+  Settings, Star, Sun, Trash2, X,
 } from 'lucide-react'
 import './App.css'
 
@@ -16,6 +16,7 @@ type Collection = {
   description: string
   cover: string
   color: string
+  favorite?: boolean
 }
 
 type CollectionDraft = Omit<Collection, 'id'>
@@ -84,7 +85,7 @@ function App() {
   const [items, setItems] = useState<LibraryItem[]>(loadLibraryItems)
   const [collections, setCollections] = useState<Collection[]>(() => {
     const saved = localStorage.getItem('renasentir-collections')
-    return saved ? JSON.parse(saved) : initialCollections
+    return saved ? (JSON.parse(saved) as Collection[]).map(collection => ({ ...collection, favorite: collection.favorite ?? false })) : initialCollections
   })
   const [myDay, setMyDay] = useState<string[]>(() => JSON.parse(localStorage.getItem('renasentir-my-day') || '["1","3","4","6"]'))
   const [modalOpen, setModalOpen] = useState(false)
@@ -188,6 +189,7 @@ function App() {
     const savedCollection: Collection = {
       ...draft,
       id: existing?.id || crypto.randomUUID(),
+      favorite: existing?.favorite ?? draft.favorite ?? false,
     }
 
     if (existing) {
@@ -213,6 +215,10 @@ function App() {
     setDeletingCollection(null)
   }
 
+  const toggleCollectionFavorite = (collectionId: string) => setCollections(current => current.map(collection =>
+    collection.id === collectionId ? { ...collection, favorite: !collection.favorite } : collection
+  ))
+
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
@@ -235,7 +241,7 @@ function App() {
           <div className="nav-divider" />
           <div className="nav-heading"><button className="nav-label nav-section-button" onClick={() => setPage('Collections')}>My collections</button><button aria-label="Create collection" onClick={() => openCollectionEditor()}><Plus size={15} /></button></div>
           <button className={`collection-link ${page === 'Collections' ? 'active' : ''}`} onClick={() => setPage('Collections')}><FolderOpen size={15} />All collections</button>
-          {collections.map(collection => (
+          {collections.filter(collection => collection.favorite).map(collection => (
             <button key={collection.id} className={`collection-link ${page === collection.name ? 'active' : ''}`} onClick={() => setPage(collection.name)}>
               <span className="collection-dot" style={{ backgroundColor: collection.color }} />{collection.name}
             </button>
@@ -270,6 +276,7 @@ function App() {
             onOpen={collection => setPage(collection.name)}
             onEdit={collection => openCollectionEditor(collection)}
             onDelete={collection => setDeletingCollection(collection)}
+            onFavorite={toggleCollectionFavorite}
           />
         ) : page === 'My Library' || page === 'Favorites' ? (
           <LibraryPage
@@ -337,12 +344,13 @@ function App() {
   )
 }
 
-function CollectionsPage({ collections, items, onOpen, onEdit, onDelete }: {
+function CollectionsPage({ collections, items, onOpen, onEdit, onDelete, onFavorite }: {
   collections: Collection[]
   items: LibraryItem[]
   onOpen: (collection: Collection) => void
   onEdit: (collection: Collection) => void
   onDelete: (collection: Collection) => void
+  onFavorite: (collectionId: string) => void
 }) {
   return (
     <div className="page collections-page">
@@ -362,6 +370,7 @@ function CollectionsPage({ collections, items, onOpen, onEdit, onDelete }: {
                 <div className="collection-card-cover" style={{ backgroundColor: collection.color }}>
                   {collection.cover ? <img src={collection.cover} alt="" /> : <BookOpen size={34} strokeWidth={1.2} />}
                   <span>{count} {count === 1 ? 'item' : 'items'}</span>
+                  <button className={`collection-favorite ${collection.favorite ? 'active' : ''}`} onClick={() => onFavorite(collection.id)} aria-label={collection.favorite ? `Remove ${collection.name} from sidebar favorites` : `Add ${collection.name} to sidebar favorites`} aria-pressed={Boolean(collection.favorite)}><Star size={17} fill={collection.favorite ? 'currentColor' : 'none'} /></button>
                 </div>
                 <div className="collection-card-copy">
                   <h2>{collection.name}</h2>

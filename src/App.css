@@ -78,6 +78,8 @@ button { cursor: pointer; }
 .collection-card-cover { position: relative; height: 175px; display: grid; place-items: center; color: rgba(245,240,229,.8); overflow: hidden; }
 .collection-card-cover img { width: 100%; height: 100%; object-fit: cover; }
 .collection-card-cover span { position: absolute; right: 10px; bottom: 10px; padding: 4px 8px; border-radius: 20px; color: white; background: rgba(41,37,31,.74); font-size: 10px; }
+.collection-favorite { position: absolute; z-index: 3; top: 10px; left: 10px; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid rgba(245,240,229,.65); border-radius: 50%; background: rgba(41,37,31,.58); color: white; }
+.collection-favorite.active { color: #f2cc70; background: rgba(41,37,31,.78); }
 .collection-card-copy { padding: 14px 14px 4px; }
 .collection-card-copy h2 { margin: 0 0 4px; font: 600 23px/1 'Cormorant Garamond', serif; }
 .collection-card-copy p { min-height: 32px; margin: 0; color: var(--taupe); font-size: 11px; line-height: 1.45; }
